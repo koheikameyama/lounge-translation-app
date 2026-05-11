@@ -988,6 +988,11 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
                 {hasAnswered ? 'answered' : 'translating'}
               </div>
+              {current.number != null && (
+                <div className="font-mono text-xs text-stone-400 mb-3">
+                  #{current.number}
+                </div>
+              )}
               <div
                 className="font-jp text-3xl sm:text-4xl leading-snug max-w-2xl transition-all duration-300"
                 style={{
@@ -1127,7 +1132,12 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                   </div>
                 </>
               )}
-              <div className="text-xs uppercase tracking-widest text-stone-500 mb-3">jp</div>
+              <div className="text-xs uppercase tracking-widest text-stone-500 mb-3 flex items-center gap-2">
+                <span>jp</span>
+                {current.number != null && (
+                  <span className="font-mono text-stone-400">#{current.number}</span>
+                )}
+              </div>
               <div className="font-jp text-2xl sm:text-3xl mb-6 leading-snug" style={{ fontWeight: 500 }}>
                 {removeQNotation(current.jp)}
               </div>
