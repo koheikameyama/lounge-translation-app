@@ -3,7 +3,7 @@ import {
   Play, Plus, BarChart3, BookOpen, ChevronLeft, ChevronRight,
   Check, X, Minus, Trash2, Pencil, Clock, Flame, Target,
   ArrowRight, RotateCcw, Shuffle, Save, ExternalLink, Sparkles,
-  Upload, FileJson, Video
+  Upload, FileJson, Video, Mic, MicOff, Volume2
 } from 'lucide-react';
 import { sentencesAPI, sessionsAPI, videosAPI, migrateFromLocalStorage } from './api';
 
@@ -438,8 +438,8 @@ function HomeView({ sessions, sentences, setView }) {
             : 'Ready for a session?'}
         </h2>
         <p className="text-stone-600 text-sm mb-6 max-w-prose">
-          A Japanese sentence appears. Try to say the English version aloud (or in your head),
-          then reveal the answer and rate yourself. Your time is recorded.
+          A Japanese sentence appears. Speak the English version aloud within 5 seconds,
+          then compare your answer with the correct one. Rate yourself as OK or NG.
         </p>
         <div className="flex flex-wrap gap-3">
           <button
@@ -538,8 +538,13 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
   const [startTs, setStartTs] = useState(null);
   const [now, setNow] = useState(0);
   const [attempts, setAttempts] = useState([]);
+  const [recognizedText, setRecognizedText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [useSpeechRecognition, setUseSpeechRecognition] = useState(true);
+  const [exceeded5sec, setExceeded5sec] = useState(false);
   const intervalRef = useRef(null);
   const sessionSavedRef = useRef(false);
+  const recognitionRef = useRef(null);
 
   if (sentences.length === 0) {
     return (
@@ -565,7 +570,16 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       const t = Date.now();
       setStartTs(t);
       setNow(t);
-      intervalRef.current = setInterval(() => setNow(Date.now()), 50);
+      setExceeded5sec(false);
+      setRecognizedText('');
+      intervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - t;
+        setNow(Date.now());
+        // 5秒超過で警告
+        if (elapsed > 5000 && !exceeded5sec) {
+          setExceeded5sec(true);
+        }
+      }, 50);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -573,12 +587,62 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [phase, idx]);
+  }, [phase, idx, exceeded5sec]);
 
   const current = queue[idx];
 
+  function startSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Speech recognition is not supported in this browser.');
+      setUseSpeechRecognition(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setRecognizedText(transcript);
+      setIsListening(false);
+      // 自動的にrevealedフェーズに移行
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      setPhase('revealed');
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      if (event.error !== 'no-speech') {
+        alert('Speech recognition error: ' + event.error);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  function stopSpeechRecognition() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  }
+
   function handleReveal() {
     if (phase === 'timing') {
+      stopSpeechRecognition();
       if (intervalRef.current) clearInterval(intervalRef.current);
       setPhase('revealed');
     }
@@ -586,7 +650,13 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
 
   function handleRate(result) {
     const ms = Date.now() - startTs;
-    const newAttempt = { sentenceId: current.id, ms, result };
+    const newAttempt = {
+      sentenceId: current.id,
+      ms,
+      result, // 'ok' or 'ng'
+      exceeded5sec,
+      recognizedText: recognizedText || null
+    };
     const newAttempts = [...attempts, newAttempt];
     setAttempts(newAttempts);
 
@@ -622,7 +692,8 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
   if (phase === 'done') {
     const total = attempts.length;
     const avg = attempts.reduce((a, b) => a + b.ms, 0) / Math.max(1, total);
-    const got = attempts.filter((a) => a.result === 'got').length;
+    const ok = attempts.filter((a) => a.result === 'ok').length;
+    const exceeded = attempts.filter((a) => a.exceeded5sec).length;
     return (
       <div className="card rounded-2xl p-10 text-center anim-in">
         <Sparkles className="w-7 h-7 mx-auto text-amber-600 mb-4" />
@@ -630,10 +701,11 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
         <h2 className="font-display text-3xl mb-6" style={{ fontWeight: 500 }}>
           {total} done.
         </h2>
-        <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto mb-8">
+        <div className="grid grid-cols-4 gap-3 max-w-2xl mx-auto mb-8">
           <SmallStat label="Sentences" value={total} />
           <SmallStat label="Avg time" value={fmtMs(avg)} />
-          <SmallStat label="Got it" value={`${Math.round((got / total) * 100)}%`} />
+          <SmallStat label="OK rate" value={`${Math.round((ok / total) * 100)}%`} />
+          <SmallStat label="5sec+" value={exceeded} />
         </div>
         <div className="flex justify-center gap-3 flex-wrap">
           <button
@@ -668,8 +740,18 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
         >
           <ChevronLeft className="w-3.5 h-3.5" /> back
         </button>
-        <div className="font-mono text-stone-500">
-          {idx + 1} <span className="text-stone-400">/ {queue.length}</span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setUseSpeechRecognition(!useSpeechRecognition)}
+            className="text-stone-500 hover:text-stone-900 inline-flex items-center gap-1.5 transition"
+            title={useSpeechRecognition ? 'Speech recognition ON' : 'Speech recognition OFF'}
+          >
+            {useSpeechRecognition ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+            {useSpeechRecognition ? 'ON' : 'OFF'}
+          </button>
+          <div className="font-mono text-stone-500">
+            {idx + 1} <span className="text-stone-400">/ {queue.length}</span>
+          </div>
         </div>
       </div>
 
@@ -698,19 +780,48 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
                 translating
               </div>
-              <div className="font-jp text-3xl sm:text-4xl leading-snug max-w-2xl" style={{ fontWeight: 500 }}>
+              <div
+                className="font-jp text-3xl sm:text-4xl leading-snug max-w-2xl transition-all duration-300"
+                style={{
+                  fontWeight: 500,
+                  color: exceeded5sec ? '#dc2626' : 'inherit'
+                }}
+              >
                 {current.jp}
               </div>
-              <div className="font-mono text-stone-500 mt-10 text-sm">
+              <div className="font-mono mt-10 text-sm" style={{ color: exceeded5sec ? '#dc2626' : '#78716c' }}>
                 {fmtMs(now - startTs)}
+                {exceeded5sec && <span className="ml-2 text-xs">⚠ 5sec exceeded</span>}
               </div>
+              {isListening && (
+                <div className="mt-4 text-xs text-amber-700 flex items-center gap-2 animate-pulse">
+                  <Mic className="w-4 h-4" />
+                  Listening...
+                </div>
+              )}
             </div>
             <div className="flex justify-center gap-3 mt-6 flex-wrap">
+              {useSpeechRecognition && !isListening && (
+                <button
+                  onClick={startSpeechRecognition}
+                  className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-amber-600 text-amber-700 hover:bg-amber-50 transition"
+                >
+                  <Mic className="w-4 h-4" /> Speak answer
+                </button>
+              )}
+              {isListening && (
+                <button
+                  onClick={stopSpeechRecognition}
+                  className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-red-600 text-red-700 hover:bg-red-50 transition"
+                >
+                  <MicOff className="w-4 h-4" /> Stop
+                </button>
+              )}
               <button
                 onClick={handleReveal}
                 className="btn-amber px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2"
               >
-                Reveal answer <ArrowRight className="w-4 h-4" />
+                {useSpeechRecognition ? 'Skip to answer' : 'Reveal answer'} <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={handleSkip}
@@ -725,11 +836,22 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
         {phase === 'revealed' && (
           <>
             <div className="flex-1 flex flex-col justify-center">
+              {recognizedText && (
+                <>
+                  <div className="text-xs uppercase tracking-widest text-blue-700 mb-3 flex items-center gap-2">
+                    <Volume2 className="w-3.5 h-3.5" />
+                    your answer
+                  </div>
+                  <div className="font-display text-xl sm:text-2xl mb-6 leading-snug text-blue-900 bg-blue-50 p-4 rounded-xl">
+                    "{recognizedText}"
+                  </div>
+                </>
+              )}
               <div className="text-xs uppercase tracking-widest text-stone-500 mb-3">jp</div>
-              <div className="font-jp text-2xl sm:text-3xl mb-8 leading-snug" style={{ fontWeight: 500 }}>
+              <div className="font-jp text-2xl sm:text-3xl mb-6 leading-snug" style={{ fontWeight: 500 }}>
                 {current.jp}
               </div>
-              <div className="text-xs uppercase tracking-widest text-amber-700 mb-3">en</div>
+              <div className="text-xs uppercase tracking-widest text-amber-700 mb-3">correct answer</div>
               <div className="font-display text-2xl sm:text-3xl leading-snug" style={{ fontWeight: 500 }}>
                 {current.en}
               </div>
@@ -743,18 +865,32 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                   source <ExternalLink className="w-3 h-3" />
                 </a>
               )}
-              <div className="font-mono text-stone-500 mt-6 text-sm">
-                took {fmtMs(now - startTs)}
+              <div className="font-mono text-stone-500 mt-4 text-sm">
+                took {fmtMs(now - startTs)} {exceeded5sec && <span className="text-red-600">⚠ exceeded 5sec</span>}
               </div>
             </div>
             <div className="mt-8">
               <div className="text-xs uppercase tracking-widest text-stone-500 mb-3 text-center">
-                how did you do?
+                did you get it right?
               </div>
-              <div className="flex justify-center gap-2 flex-wrap">
-                <RateBtn icon={<Check className="w-4 h-4" />} label="Got it" onClick={() => handleRate('got')} variant="dark" />
-                <RateBtn icon={<Minus className="w-4 h-4" />} label="Close" onClick={() => handleRate('close')} />
-                <RateBtn icon={<X className="w-4 h-4" />} label="Couldn't" onClick={() => handleRate('miss')} />
+              <div className="flex justify-center gap-3 flex-wrap">
+                <button
+                  onClick={() => handleRate('ok')}
+                  className="px-8 py-3 rounded-full text-base font-medium inline-flex items-center gap-2 transition"
+                  style={{
+                    background: '#1c1917',
+                    color: '#f5efe2',
+                    border: '2px solid #1c1917',
+                  }}
+                >
+                  <Check className="w-5 h-5" /> OK
+                </button>
+                <button
+                  onClick={() => handleRate('ng')}
+                  className="px-8 py-3 rounded-full text-base font-medium inline-flex items-center gap-2 transition border-2 border-stone-300 hover:border-stone-900"
+                >
+                  <X className="w-5 h-5" /> NG
+                </button>
               </div>
             </div>
           </>
