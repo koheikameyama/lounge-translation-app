@@ -92,7 +92,7 @@ function weightedShuffle(sentences, sessions) {
     });
   });
 
-  const TARGET_TIME = 5000; // 5 seconds
+  const TARGET_TIME = 10000; // 10 seconds
 
   // Categorize sentences by priority
   const noHistory = [];
@@ -850,7 +850,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
         const elapsed = Date.now() - t;
         setNow(Date.now());
         // 5秒超過で警告（一度だけ）
-        if (elapsed > 5000 && !hasExceeded) {
+        if (elapsed > 10000 && !hasExceeded) {
           hasExceeded = true;
           setExceeded5sec(true);
         }
@@ -910,7 +910,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
           <SmallStat label="Sentences" value={total} />
           <SmallStat label="Avg time" value={fmtMs(avg)} />
           <SmallStat label="OK rate" value={`${Math.round((ok / total) * 100)}%`} />
-          <SmallStat label="5sec+" value={exceeded} />
+          <SmallStat label="10sec+" value={exceeded} />
         </div>
         <div className="flex justify-center gap-3 flex-wrap">
           <button
@@ -1004,7 +1004,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
               </div>
               <div className="font-mono mt-10 text-sm" style={{ color: exceeded5sec ? '#dc2626' : '#78716c' }}>
                 {fmtMs(now - startTs)}
-                {exceeded5sec && <span className="ml-2 text-xs">⚠ 5sec exceeded</span>}
+                {exceeded5sec && <span className="ml-2 text-xs">⚠ 10sec exceeded</span>}
               </div>
               {isListening && (
                 <div className="mt-4 text-xs text-amber-700 flex items-center gap-2 animate-pulse">
@@ -1032,7 +1032,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                           intervalRef.current = setInterval(() => {
                             const elapsed = Date.now() - startTs;
                             setNow(Date.now());
-                            if (elapsed > 5000 && !hasExceeded) {
+                            if (elapsed > 10000 && !hasExceeded) {
                               hasExceeded = true;
                               setExceeded5sec(true);
                             }
@@ -1156,7 +1156,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                 </a>
               )}
               <div className="font-mono text-stone-500 mt-4 text-sm">
-                took {fmtMs(now - startTs)} {exceeded5sec && <span className="text-red-600">⚠ exceeded 5sec</span>}
+                took {fmtMs(now - startTs)} {exceeded5sec && <span className="text-red-600">⚠ exceeded 10sec</span>}
               </div>
             </div>
             <div className="mt-8">
