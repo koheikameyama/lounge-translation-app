@@ -885,6 +885,18 @@ function SentencesView({ sentences, setSentences }) {
     setSource('');
   }
 
+  async function handleSyncFromD1() {
+    if (!window.confirm('Sync latest sentences from D1 database?')) return;
+    try {
+      const newSentences = await sentencesAPI.getAll();
+      setSentences(newSentences);
+      alert(`Successfully synced ${newSentences.length} sentences from D1!`);
+    } catch (error) {
+      console.error('Sync failed:', error);
+      alert('Sync failed: ' + error.message);
+    }
+  }
+
   const filtered = filter
     ? sentences.filter(
         (s) =>
@@ -895,7 +907,14 @@ function SentencesView({ sentences, setSentences }) {
 
   return (
     <div className="anim-in">
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex items-center justify-end gap-2 mb-4">
+        <button
+          onClick={handleSyncFromD1}
+          className="text-xs px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border border-amber-300 text-amber-800 hover:border-amber-600 hover:bg-amber-50 transition"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Sync from D1
+        </button>
         <button
           onClick={() => setShowImport(!showImport)}
           className="text-xs px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border border-stone-300 hover:border-stone-900 hover:bg-stone-100 transition"
