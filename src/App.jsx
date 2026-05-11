@@ -922,9 +922,36 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
               )}
               {hasAnswered && recognizedText && (
                 <div className="mt-6 max-w-md">
-                  <div className="text-xs uppercase tracking-widest text-blue-700 mb-2 flex items-center gap-2">
-                    <Volume2 className="w-3.5 h-3.5" />
-                    your answer
+                  <div className="text-xs uppercase tracking-widest text-blue-700 mb-2 flex items-center gap-2 justify-between">
+                    <span className="flex items-center gap-2">
+                      <Volume2 className="w-3.5 h-3.5" />
+                      your answer
+                    </span>
+                    <button
+                      onClick={() => {
+                        setRecognizedText('');
+                        setHasAnswered(false);
+                        // Continue timer (don't reset startTs)
+                        // Restart interval if it was stopped
+                        if (!intervalRef.current) {
+                          let hasExceeded = exceeded5sec;
+                          intervalRef.current = setInterval(() => {
+                            const elapsed = Date.now() - startTs;
+                            setNow(Date.now());
+                            if (elapsed > 5000 && !hasExceeded) {
+                              hasExceeded = true;
+                              setExceeded5sec(true);
+                            }
+                          }, 50);
+                        }
+                        startSpeechRecognition();
+                      }}
+                      className="text-xs text-amber-700 hover:text-amber-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-amber-50"
+                      title="Redo recording"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Redo
+                    </button>
                   </div>
                   <div className="font-display text-xl leading-snug text-blue-900 bg-blue-50 p-4 rounded-xl">
                     "{recognizedText}"
