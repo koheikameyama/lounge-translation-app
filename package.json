@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pages:dev": "wrangler pages dev dist --compatibility-date=2024-01-01 --d1 DB=lounge-translation-db",
+    "pages:deploy": "npm run build && wrangler pages deploy dist",
+    "db:create": "wrangler d1 create lounge-translation-db",
+    "db:migrate": "wrangler d1 execute lounge-translation-db --file=./schema.sql"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
@@ -18,6 +22,7 @@
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "wrangler": "^4.90.0"
   }
 }

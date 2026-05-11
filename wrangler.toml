@@ -1,0 +1,13 @@
+name = "lounge-translation-app"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+# D1 Database bindings
+[[d1_databases]]
+binding = "DB"
+database_name = "lounge-translation-db"
+database_id = "762c7f64-b719-46e8-a84d-1818fe2ac17d"
+
+# Environment variables for YouTube API
+[vars]
+# YOUTUBE_API_KEY will be set via wrangler secret put YOUTUBE_API_KEY

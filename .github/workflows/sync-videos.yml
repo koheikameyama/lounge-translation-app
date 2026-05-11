@@ -1,0 +1,73 @@
+name: Sync YouTube Videos
+
+on:
+  schedule:
+    # 毎日 UTC 0:00 (JST 9:00) に実行
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 手動実行も可能
+    inputs:
+      max_videos:
+        description: '取得する動画数'
+        required: false
+        default: '5'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          pip install -r requirements.txt
+
+      - name: Fetch latest videos and upload to Cloudflare
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          CLOUDFLARE_API_URL: ${{ secrets.CLOUDFLARE_API_URL }}
+        run: |
+          cd scripts
+          MAX_VIDEOS="${{ github.event.inputs.max_videos || '5' }}"
+
+          echo "Fetching latest $MAX_VIDEOS videos from @englishinthelounge..."
+          python3 fetch_transcript.py \
+            --channel @englishinthelounge \
+            --limit "$MAX_VIDEOS" \
+            --api-key "$YOUTUBE_API_KEY" \
+            > /tmp/sentences.json
+
+          # JSON出力を確認
+          echo "Generated JSON:"
+          cat /tmp/sentences.json | jq '. | length'
+
+          # Cloudflare Pages Functions にPOST
+          echo "Uploading to Cloudflare..."
+          curl -X POST "$CLOUDFLARE_API_URL/api/sentences" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/sentences.json \
+            -o /tmp/response.json \
+            -w "\nHTTP Status: %{http_code}\n"
+
+          # レスポンスを表示
+          echo "Response:"
+          cat /tmp/response.json | jq .
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-output
+          path: |
+            /tmp/sentences.json
+            /tmp/response.json
+          retention-days: 7

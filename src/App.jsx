@@ -3,8 +3,9 @@ import {
   Play, Plus, BarChart3, BookOpen, ChevronLeft, ChevronRight,
   Check, X, Minus, Trash2, Pencil, Clock, Flame, Target,
   ArrowRight, RotateCcw, Shuffle, Save, ExternalLink, Sparkles,
-  Upload, FileJson
+  Upload, FileJson, Video
 } from 'lucide-react';
+import { sentencesAPI, sessionsAPI, videosAPI, migrateFromLocalStorage } from './api';
 
 const STORAGE_KEY = 'lounge-translation-app-v1';
 
@@ -51,19 +52,6 @@ function dateLabel(s) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function emptyData() {
-  return {
-    sentences: SEED_SENTENCES.map((s) => ({
-      id: uid(),
-      jp: s.jp,
-      en: s.en,
-      source: '',
-      createdAt: Date.now(),
-    })),
-    sessions: [], // { id, date, attempts: [{sentenceId, ms, result: 'got'|'close'|'miss'}] }
-  };
-}
-
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -73,10 +61,7 @@ function shuffle(arr) {
   return a;
 }
 
-// Parse pasted import text. Supports:
-//   - JSON array: [{jp, en, source?}]
-//   - TSV: jp\ten\t[source] per line
-//   - Alternating lines: jp / en / jp / en / ...
+// Parse pasted import text
 function parseImport(text) {
   text = text.trim();
   if (!text) return { pairs: [], format: null, error: null };
@@ -160,56 +145,127 @@ function calcStreak(sessions) {
 
 // --------- main ----------
 export default function App() {
-  const [data, setData] = useState(null);
+  const [sentences, setSentences] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState(null); // 'checking' | 'migrating' | 'done' | null
 
+  // Load data from D1
   useEffect(() => {
-    try {
-      const value = localStorage.getItem(STORAGE_KEY);
-      if (value) {
-        const parsed = JSON.parse(value);
-        if (parsed.sentences && parsed.sessions) {
-          setData(parsed);
-          setLoading(false);
-          return;
+    async function loadData() {
+      try {
+        // Check if localStorage has data that needs migration
+        const localData = localStorage.getItem(STORAGE_KEY);
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          if (parsed.sentences && parsed.sentences.length > 0) {
+            setMigrationStatus('checking');
+            // Ask user if they want to migrate
+            const shouldMigrate = window.confirm(
+              `Found ${parsed.sentences.length} sentences in localStorage. ` +
+              `Migrate to cloud database? This will sync your data across devices.`
+            );
+
+            if (shouldMigrate) {
+              setMigrationStatus('migrating');
+              const result = await migrateFromLocalStorage(parsed);
+              if (result.success) {
+                alert('Migration complete! Your data is now synced to the cloud.');
+                localStorage.removeItem(STORAGE_KEY); // Clear localStorage after successful migration
+              } else {
+                alert('Migration failed: ' + result.error);
+                setMigrationStatus(null);
+                setLoading(false);
+                return;
+              }
+            } else {
+              // User declined migration, keep using localStorage
+              setSentences(parsed.sentences || []);
+              setSessions(parsed.sessions || []);
+              setMigrationStatus('done');
+              setLoading(false);
+              return;
+            }
+          }
         }
+
+        // Load from D1
+        const [sentencesData, sessionsData, videosData] = await Promise.all([
+          sentencesAPI.getAll(),
+          sessionsAPI.getAll(),
+          videosAPI.getAll(),
+        ]);
+
+        setSentences(sentencesData || []);
+        setSessions(sessionsData || []);
+        setVideos(videosData || []);
+        setMigrationStatus('done');
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        // Fallback to seed data if D1 fails
+        const seedData = SEED_SENTENCES.map((s) => ({
+          id: uid(),
+          jp: s.jp,
+          en: s.en,
+          source: '',
+          createdAt: Date.now(),
+        }));
+        setSentences(seedData);
       }
-    } catch (e) {
-      // first-time or parse fail — fall through to fresh
+      setLoading(false);
     }
-    const fresh = emptyData();
-    setData(fresh);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-    } catch (e) {
-      console.error('localStorage write failed:', e);
-    }
-    setLoading(false);
+    loadData();
   }, []);
 
-  function persist(newData) {
-    setData(newData);
+  async function handleReset() {
+    if (!window.confirm('Are you sure? This will delete ALL data including videos, sentences, and history.')) {
+      setResetConfirm(false);
+      return;
+    }
+
+    // Reset to seed data
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
-    } catch (e) {
-      console.error('localStorage write failed:', e);
+      // Delete all data
+      for (const sentence of sentences) {
+        await sentencesAPI.delete(sentence.id);
+      }
+
+      // Re-add seed sentences
+      const seedData = SEED_SENTENCES.map((s) => ({
+        jp: s.jp,
+        en: s.en,
+        source: '',
+      }));
+      await sentencesAPI.create(seedData);
+
+      // Reload
+      const [newSentences, newSessions, newVideos] = await Promise.all([
+        sentencesAPI.getAll(),
+        sessionsAPI.getAll(),
+        videosAPI.getAll(),
+      ]);
+
+      setSentences(newSentences);
+      setSessions(newSessions);
+      setVideos(newVideos);
+      setResetConfirm(false);
+      setView('home');
+    } catch (error) {
+      console.error('Reset failed:', error);
+      alert('Reset failed: ' + error.message);
     }
   }
 
-  function handleReset() {
-    const fresh = emptyData();
-    persist(fresh);
-    setResetConfirm(false);
-    setView('home');
-  }
-
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#f5efe2', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
         <style>{FONT_IMPORT}</style>
-        <div className="text-stone-500 text-sm tracking-wide">loading…</div>
+        <div className="text-stone-500 text-sm tracking-wide">
+          {migrationStatus === 'migrating' ? 'Migrating data to cloud...' : 'loading…'}
+        </div>
       </div>
     );
   }
@@ -254,13 +310,14 @@ export default function App() {
       `}</style>
 
       <div className="max-w-3xl mx-auto px-5 sm:px-8 py-8 sm:py-12 paper-grain min-h-screen">
-        <Header view={view} setView={setView} sentenceCount={data.sentences.length} />
+        <Header view={view} setView={setView} sentenceCount={sentences.length} />
 
         <main className="mt-8 sm:mt-12">
-          {view === 'home' && <HomeView data={data} setView={setView} />}
-          {view === 'practice' && <PracticeView data={data} persist={persist} setView={setView} />}
-          {view === 'sentences' && <SentencesView data={data} persist={persist} />}
-          {view === 'history' && <HistoryView data={data} />}
+          {view === 'home' && <HomeView sessions={sessions} sentences={sentences} setView={setView} />}
+          {view === 'practice' && <PracticeView sentences={sentences} sessions={sessions} setSessions={setSessions} setView={setView} />}
+          {view === 'sentences' && <SentencesView sentences={sentences} setSentences={setSentences} />}
+          {view === 'videos' && <VideosView videos={videos} sentences={sentences} setView={setView} />}
+          {view === 'history' && <HistoryView sessions={sessions} />}
         </main>
 
         <Footer onReset={() => setResetConfirm(true)} />
@@ -279,6 +336,7 @@ function Header({ view, setView, sentenceCount }) {
     { id: 'home', label: 'Home' },
     { id: 'practice', label: 'Practice' },
     { id: 'sentences', label: 'Sentences' },
+    { id: 'videos', label: 'Videos' },
     { id: 'history', label: 'History' },
   ];
   return (
@@ -322,9 +380,9 @@ function Header({ view, setView, sentenceCount }) {
 }
 
 // --------- home ----------
-function HomeView({ data, setView }) {
+function HomeView({ sessions, sentences, setView }) {
   const todayKey = todayStr();
-  const todaySession = data.sessions.find((s) => s.date === todayKey);
+  const todaySession = sessions.find((s) => s.date === todayKey);
 
   const todayCount = todaySession ? todaySession.attempts.length : 0;
   const todayAvg =
@@ -337,8 +395,8 @@ function HomeView({ data, setView }) {
         todaySession.attempts.length
       : null;
 
-  const streak = calcStreak(data.sessions);
-  const totalAttempts = data.sessions.reduce((sum, s) => sum + s.attempts.length, 0);
+  const streak = calcStreak(sessions);
+  const totalAttempts = sessions.reduce((sum, s) => sum + s.attempts.length, 0);
 
   return (
     <div className="anim-in">
@@ -473,18 +531,17 @@ function InfoCard({ title, body }) {
 }
 
 // --------- practice ----------
-function PracticeView({ data, persist, setView }) {
-  const [queue, setQueue] = useState(() => shuffle(data.sentences));
+function PracticeView({ sentences, sessions, setSessions, setView }) {
+  const [queue, setQueue] = useState(() => shuffle(sentences));
   const [idx, setIdx] = useState(0);
-  const [phase, setPhase] = useState('ready'); // ready | timing | revealed | done
+  const [phase, setPhase] = useState('ready');
   const [startTs, setStartTs] = useState(null);
   const [now, setNow] = useState(0);
   const [attempts, setAttempts] = useState([]);
   const intervalRef = useRef(null);
   const sessionSavedRef = useRef(false);
 
-  // edge: no sentences
-  if (data.sentences.length === 0) {
+  if (sentences.length === 0) {
     return (
       <div className="card rounded-2xl p-10 text-center anim-in">
         <h2 className="font-display text-2xl mb-3" style={{ fontWeight: 500 }}>
@@ -503,7 +560,6 @@ function PracticeView({ data, persist, setView }) {
     );
   }
 
-  // start timer when entering 'timing' phase
   useEffect(() => {
     if (phase === 'timing') {
       const t = Date.now();
@@ -530,11 +586,7 @@ function PracticeView({ data, persist, setView }) {
 
   function handleRate(result) {
     const ms = Date.now() - startTs;
-    const newAttempt = {
-      sentenceId: current.id,
-      ms,
-      result, // 'got' | 'close' | 'miss'
-    };
+    const newAttempt = { sentenceId: current.id, ms, result };
     const newAttempts = [...attempts, newAttempt];
     setAttempts(newAttempts);
 
@@ -555,26 +607,17 @@ function PracticeView({ data, persist, setView }) {
     }
   }
 
-  // save session when done
   useEffect(() => {
     if (phase === 'done' && attempts.length > 0 && !sessionSavedRef.current) {
       sessionSavedRef.current = true;
       const todayKey = todayStr();
-      const existing = data.sessions.find((s) => s.date === todayKey);
-      let newSessions;
-      if (existing) {
-        newSessions = data.sessions.map((s) =>
-          s.date === todayKey ? { ...s, attempts: [...s.attempts, ...attempts] } : s
-        );
-      } else {
-        newSessions = [
-          ...data.sessions,
-          { id: uid(), date: todayKey, attempts },
-        ];
-      }
-      persist({ ...data, sessions: newSessions });
+      sessionsAPI.create({ date: todayKey, attempts }).then(() => {
+        sessionsAPI.getAll().then(setSessions);
+      }).catch(error => {
+        console.error('Failed to save session:', error);
+      });
     }
-  }, [phase, attempts, data, persist]);
+  }, [phase, attempts, setSessions]);
 
   if (phase === 'done') {
     const total = attempts.length;
@@ -595,7 +638,7 @@ function PracticeView({ data, persist, setView }) {
         <div className="flex justify-center gap-3 flex-wrap">
           <button
             onClick={() => {
-              setQueue(shuffle(data.sentences));
+              setQueue(shuffle(sentences));
               setIdx(0);
               setAttempts([]);
               sessionSavedRef.current = false;
@@ -752,9 +795,10 @@ function SmallStat({ label, value }) {
     </div>
   );
 }
+// This file contains the remaining components to be appended to App.jsx
 
 // --------- sentences ----------
-function SentencesView({ data, persist }) {
+function SentencesView({ sentences, setSentences }) {
   const [jp, setJp] = useState('');
   const [en, setEn] = useState('');
   const [source, setSource] = useState('');
@@ -765,50 +809,64 @@ function SentencesView({ data, persist }) {
 
   const importResult = useMemo(() => parseImport(importText), [importText]);
 
-  function handleBulkImport() {
+  async function handleBulkImport() {
     if (importResult.pairs.length === 0) return;
-    const newSentences = importResult.pairs.map((p) => ({
-      id: uid(),
-      jp: p.jp,
-      en: p.en,
-      source: p.source || '',
-      createdAt: Date.now(),
-    }));
-    persist({ ...data, sentences: [...newSentences, ...data.sentences] });
-    setImportText('');
-    setShowImport(false);
-  }
-
-  function handleAddOrUpdate() {
-    if (!jp.trim() || !en.trim()) return;
-    if (editingId) {
-      const updated = data.sentences.map((s) =>
-        s.id === editingId ? { ...s, jp: jp.trim(), en: en.trim(), source: source.trim() } : s
-      );
-      persist({ ...data, sentences: updated });
-      setEditingId(null);
-    } else {
-      const newSentence = {
-        id: uid(),
-        jp: jp.trim(),
-        en: en.trim(),
-        source: source.trim(),
-        createdAt: Date.now(),
-      };
-      persist({ ...data, sentences: [newSentence, ...data.sentences] });
+    try {
+      await sentencesAPI.create(importResult.pairs);
+      const newSentences = await sentencesAPI.getAll();
+      setSentences(newSentences);
+      setImportText('');
+      setShowImport(false);
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Import failed: ' + error.message);
     }
-    setJp('');
-    setEn('');
-    setSource('');
   }
 
-  function handleDelete(id) {
-    persist({ ...data, sentences: data.sentences.filter((s) => s.id !== id) });
-    if (editingId === id) {
-      setEditingId(null);
+  async function handleAddOrUpdate() {
+    if (!jp.trim() || !en.trim()) return;
+    try {
+      if (editingId) {
+        await sentencesAPI.update({
+          id: editingId,
+          jp: jp.trim(),
+          en: en.trim(),
+          source: source.trim(),
+        });
+        setEditingId(null);
+      } else {
+        await sentencesAPI.create([{
+          jp: jp.trim(),
+          en: en.trim(),
+          source: source.trim(),
+        }]);
+      }
+      const newSentences = await sentencesAPI.getAll();
+      setSentences(newSentences);
       setJp('');
       setEn('');
       setSource('');
+    } catch (error) {
+      console.error('Save failed:', error);
+      alert('Save failed: ' + error.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this sentence?')) return;
+    try {
+      await sentencesAPI.delete(id);
+      const newSentences = await sentencesAPI.getAll();
+      setSentences(newSentences);
+      if (editingId === id) {
+        setEditingId(null);
+        setJp('');
+        setEn('');
+        setSource('');
+      }
+    } catch (error) {
+      console.error('Delete failed:', error);
+      alert('Delete failed: ' + error.message);
     }
   }
 
@@ -828,12 +886,12 @@ function SentencesView({ data, persist }) {
   }
 
   const filtered = filter
-    ? data.sentences.filter(
+    ? sentences.filter(
         (s) =>
           s.jp.includes(filter) ||
           s.en.toLowerCase().includes(filter.toLowerCase())
       )
-    : data.sentences;
+    : sentences;
 
   return (
     <div className="anim-in">
@@ -856,7 +914,6 @@ function SentencesView({ data, persist }) {
           <p className="text-sm text-stone-600 mb-3 leading-relaxed">
             Paste JSON output from <code className="font-mono text-xs bg-stone-200 px-1.5 py-0.5 rounded">fetch_transcript.py</code>,
             or paste raw transcript text with Japanese and English on alternating lines.
-            Tab-separated values <code className="font-mono text-xs bg-stone-200 px-1.5 py-0.5 rounded">jp[TAB]en</code> also work.
           </p>
           <textarea
             value={importText}
@@ -1029,11 +1086,104 @@ function SentencesView({ data, persist }) {
   );
 }
 
+// --------- videos ----------
+function VideosView({ videos, sentences, setView }) {
+  if (videos.length === 0) {
+    return (
+      <div className="card rounded-2xl p-10 text-center anim-in">
+        <Video className="w-7 h-7 mx-auto text-stone-400 mb-3" />
+        <h2 className="font-display text-xl mb-2" style={{ fontWeight: 500 }}>
+          No videos yet
+        </h2>
+        <p className="text-stone-500 text-sm">
+          Import sentences from videos to see them here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="anim-in">
+      <div className="text-xs uppercase tracking-widest text-stone-500 mb-4 px-1">
+        {videos.length} {videos.length === 1 ? 'video' : 'videos'}
+      </div>
+
+      <div className="space-y-3">
+        {videos.map((video) => {
+          const gotRate = video.total_attempts > 0
+            ? (video.got_count / video.total_attempts) * 100
+            : null;
+
+          return (
+            <div key={video.id} className="card rounded-xl p-5">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-display text-lg mb-1" style={{ fontWeight: 500 }}>
+                    {video.title || 'Untitled Video'}
+                  </h3>
+                  <a
+                    href={video.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-stone-400 hover:text-amber-700 inline-flex items-center gap-1 truncate"
+                  >
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{video.url}</span>
+                  </a>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <div>
+                  <div className="text-xs text-stone-400 uppercase tracking-wider mb-1">Sentences</div>
+                  <div className="font-display text-xl" style={{ fontWeight: 500 }}>
+                    {video.sentence_count}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-stone-400 uppercase tracking-wider mb-1">Practice</div>
+                  <div className="font-display text-xl" style={{ fontWeight: 500 }}>
+                    {video.total_attempts || 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-stone-400 uppercase tracking-wider mb-1">Avg time</div>
+                  <div className="font-display text-xl" style={{ fontWeight: 500 }}>
+                    {fmtMs(video.avg_time)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-stone-400 uppercase tracking-wider mb-1">Got it</div>
+                  <div className="font-display text-xl" style={{ fontWeight: 500 }}>
+                    {gotRate !== null ? `${Math.round(gotRate)}%` : '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // TODO: Implement practice mode with video filter
+                    alert('Practice mode for specific video - coming soon!');
+                  }}
+                  className="btn-amber px-4 py-2 rounded-full text-xs font-medium inline-flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5" /> Practice this video
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // --------- history ----------
-function HistoryView({ data }) {
+function HistoryView({ sessions }) {
   const sortedSessions = useMemo(
-    () => [...data.sessions].sort((a, b) => b.date.localeCompare(a.date)),
-    [data.sessions]
+    () => [...sessions].sort((a, b) => b.date.localeCompare(a.date)),
+    [sessions]
   );
 
   if (sortedSessions.length === 0) {
@@ -1050,7 +1200,6 @@ function HistoryView({ data }) {
     );
   }
 
-  // overall stats
   const totalAttempts = sortedSessions.reduce((a, s) => a + s.attempts.length, 0);
   const allMs = sortedSessions.flatMap((s) => s.attempts.map((a) => a.ms));
   const overallAvg = allMs.length ? allMs.reduce((a, b) => a + b, 0) / allMs.length : 0;
@@ -1060,7 +1209,6 @@ function HistoryView({ data }) {
         totalAttempts
       : 0;
 
-  // sparkline data: last 14 days
   const last14 = useMemo(() => {
     const out = [];
     for (let i = 13; i >= 0; i--) {
@@ -1164,7 +1312,7 @@ function SmallCard({ label, value }) {
 function Footer({ onReset }) {
   return (
     <footer className="mt-16 pt-6 border-t border-stone-200 flex items-center justify-between text-xs text-stone-400">
-      <div className="font-mono">data saved locally · in your browser</div>
+      <div className="font-mono">data synced to cloud</div>
       <button onClick={onReset} className="hover:text-red-600 transition">
         reset all data
       </button>
@@ -1178,7 +1326,7 @@ function ResetModal({ onConfirm, onCancel }) {
       <div className="card rounded-2xl p-6 max-w-sm w-full">
         <h3 className="font-display text-xl mb-2" style={{ fontWeight: 500 }}>Reset everything?</h3>
         <p className="text-sm text-stone-600 mb-5">
-          This will delete all your custom sentences and history, and restore the starter set.
+          This will delete all your custom sentences and history from the cloud, and restore the starter set.
         </p>
         <div className="flex gap-2 justify-end">
           <button

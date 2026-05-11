@@ -29,7 +29,14 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.dev.vars
 
 # Local data
 sentences.json
 *.local.json
+
+# Wrangler
+.wrangler/
+
+# Backup files
+*.backup
