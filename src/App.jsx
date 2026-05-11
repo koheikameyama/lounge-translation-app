@@ -673,6 +673,22 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       return;
     }
 
+    // Always stop any existing recognition first to avoid duplicate recognition
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.onend = null;
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore - already stopped
+      }
+      recognitionRef.current = null;
+    }
+
+    // Clear any previous text
+    setRecognizedText('');
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
@@ -680,7 +696,6 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     recognition.interimResults = true;
 
     let finalTranscript = '';
-    let manuallyStopped = false;
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -720,23 +735,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     };
 
     recognition.onend = () => {
-      // Auto-restart if not manually stopped and still in timing phase
-      if (!manuallyStopped && recognitionRef.current === recognition) {
-        try {
-          recognition.start();
-        } catch (e) {
-          // Already started or other error
-          setIsListening(false);
-        }
-      } else {
-        setIsListening(false);
-      }
-    };
-
-    // Mark manually stopped flag on the recognition object
-    recognition._stop = () => {
-      manuallyStopped = true;
-      recognition.stop();
+      setIsListening(false);
     };
 
     recognitionRef.current = recognition;
@@ -745,10 +744,14 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
 
   function stopSpeechRecognition() {
     if (recognitionRef.current) {
-      if (recognitionRef.current._stop) {
-        recognitionRef.current._stop();
-      } else {
+      // Disable event handlers first to prevent late callbacks from updating state
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.onend = null;
+      try {
         recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore - already stopped
       }
       recognitionRef.current = null;
       setIsListening(false);
