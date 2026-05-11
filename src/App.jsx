@@ -659,35 +659,67 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    let finalTranscript = '';
+    let manuallyStopped = false;
 
     recognition.onstart = () => {
       setIsListening(true);
     };
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setRecognizedText(transcript);
-      setIsListening(false);
-      setHasAnswered(true);
-      // タイマーは停止するが、フェーズはtimingのまま（ユーザーが「回答済」を押すまで）
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      const displayText = (finalTranscript + interimTranscript).trim();
+      setRecognizedText(displayText);
+
+      // Mark as answered when we have a final result
+      if (finalTranscript.trim()) {
+        setHasAnswered(true);
       }
     };
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      setIsListening(false);
-      if (event.error !== 'no-speech') {
-        alert('Speech recognition error: ' + event.error);
+      if (event.error === 'no-speech') {
+        // Ignore no-speech errors, will auto-restart
+        return;
       }
+      if (event.error === 'aborted') {
+        // User manually stopped, no error to show
+        return;
+      }
+      setIsListening(false);
+      alert('Speech recognition error: ' + event.error);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      // Auto-restart if not manually stopped and still in timing phase
+      if (!manuallyStopped && recognitionRef.current === recognition) {
+        try {
+          recognition.start();
+        } catch (e) {
+          // Already started or other error
+          setIsListening(false);
+        }
+      } else {
+        setIsListening(false);
+      }
+    };
+
+    // Mark manually stopped flag on the recognition object
+    recognition._stop = () => {
+      manuallyStopped = true;
+      recognition.stop();
     };
 
     recognitionRef.current = recognition;
@@ -696,7 +728,12 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
 
   function stopSpeechRecognition() {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      if (recognitionRef.current._stop) {
+        recognitionRef.current._stop();
+      } else {
+        recognitionRef.current.stop();
+      }
+      recognitionRef.current = null;
       setIsListening(false);
     }
   }
@@ -939,6 +976,8 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                     </span>
                     <button
                       onClick={() => {
+                        // Stop any existing speech recognition first
+                        stopSpeechRecognition();
                         setRecognizedText('');
                         setHasAnswered(false);
                         // Continue timer (don't reset startTs)
@@ -954,7 +993,8 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                             }
                           }, 50);
                         }
-                        startSpeechRecognition();
+                        // Small delay before restarting recognition
+                        setTimeout(() => startSpeechRecognition(), 100);
                       }}
                       className="text-xs text-amber-700 hover:text-amber-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-amber-50"
                       title="Redo recording"
