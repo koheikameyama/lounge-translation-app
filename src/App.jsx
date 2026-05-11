@@ -817,32 +817,62 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
   }
 
   // Timer and auto-start speech recognition
+  // Reset & start timer/recognition after Japanese TTS finishes
+  function startTimingAndRecognition() {
+    const t = Date.now();
+    setStartTs(t);
+    setNow(t);
+    let hasExceeded = false;
+    intervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - t;
+      setNow(Date.now());
+      if (elapsed > 10000 && !hasExceeded) {
+        hasExceeded = true;
+        setExceeded5sec(true);
+      }
+    }, 50);
+
+    if (useSpeechRecognition) {
+      setTimeout(() => startSpeechRecognition(), 100);
+    }
+  }
+
+  function speakJapanese(text, onDone) {
+    if (!('speechSynthesis' in window)) {
+      onDone?.();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 1.0;
+
+    const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
+    const jpVoice =
+      voices.find(v => v.lang.startsWith('ja') && (v.name.includes('Kyoko') || v.name.includes('Otoya'))) ||
+      voices.find(v => v.lang.startsWith('ja') && !v.localService) ||
+      voices.find(v => v.lang.startsWith('ja'));
+    if (jpVoice) utterance.voice = jpVoice;
+
+    utterance.onend = () => onDone?.();
+    utterance.onerror = () => onDone?.();
+    window.speechSynthesis.speak(utterance);
+  }
+
   useEffect(() => {
     if (phase === 'timing') {
-      const t = Date.now();
-      setStartTs(t);
-      setNow(t);
+      // Reset state, but don't start timer yet — wait for Japanese TTS to finish
+      setNow(Date.now());
+      setStartTs(null);
       setExceeded5sec(false);
       setRecognizedText('');
       setHasAnswered(false);
-      let hasExceeded = false;
-      intervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - t;
-        setNow(Date.now());
-        // 5秒超過で警告（一度だけ）
-        if (elapsed > 10000 && !hasExceeded) {
-          hasExceeded = true;
-          setExceeded5sec(true);
-        }
-      }, 50);
 
-      // Auto-start speech recognition if enabled
-      if (useSpeechRecognition) {
-        // Small delay to ensure UI is ready
-        setTimeout(() => {
-          startSpeechRecognition();
-        }, 100);
-      }
+      // Read the Japanese prompt, then start timer + recognition
+      const jpText = removeQNotation(current.jp);
+      speakJapanese(jpText, () => {
+        startTimingAndRecognition();
+      });
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -983,7 +1013,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                 {removeQNotation(current.jp)}
               </div>
               <div className="font-mono mt-10 text-sm" style={{ color: exceeded5sec ? '#dc2626' : '#78716c' }}>
-                {fmtMs(now - startTs)}
+                {startTs ? fmtMs(now - startTs) : '読み上げ中...'}
                 {exceeded5sec && <span className="ml-2 text-xs">⚠ 10sec exceeded</span>}
               </div>
               {isListening && (
