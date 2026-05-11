@@ -628,6 +628,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
   const [isListening, setIsListening] = useState(false);
   const [useSpeechRecognition, setUseSpeechRecognition] = useState(true);
   const [exceeded5sec, setExceeded5sec] = useState(false);
+  const [hasAnswered, setHasAnswered] = useState(false);
   const intervalRef = useRef(null);
   const sessionSavedRef = useRef(false);
   const recognitionRef = useRef(null);
@@ -658,6 +659,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       setNow(t);
       setExceeded5sec(false);
       setRecognizedText('');
+      setHasAnswered(false);
       intervalRef.current = setInterval(() => {
         const elapsed = Date.now() - t;
         setNow(Date.now());
@@ -698,9 +700,12 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       const transcript = event.results[0][0].transcript;
       setRecognizedText(transcript);
       setIsListening(false);
-      // 自動的にrevealedフェーズに移行
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      setPhase('revealed');
+      setHasAnswered(true);
+      // タイマーは停止するが、フェーズはtimingのまま（ユーザーが「回答済」を押すまで）
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
 
     recognition.onerror = (event) => {
@@ -864,7 +869,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
             <div className="flex-1 flex flex-col items-center justify-center text-center">
               <div className="text-xs uppercase tracking-widest text-amber-700 mb-6 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
-                translating
+                {hasAnswered ? 'answered' : 'translating'}
               </div>
               <div
                 className="font-jp text-3xl sm:text-4xl leading-snug max-w-2xl transition-all duration-300"
@@ -885,36 +890,78 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                   Listening...
                 </div>
               )}
+              {hasAnswered && recognizedText && (
+                <div className="mt-6 max-w-md">
+                  <div className="text-xs uppercase tracking-widest text-blue-700 mb-2 flex items-center gap-2">
+                    <Volume2 className="w-3.5 h-3.5" />
+                    your answer
+                  </div>
+                  <div className="font-display text-xl leading-snug text-blue-900 bg-blue-50 p-4 rounded-xl">
+                    "{recognizedText}"
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex justify-center gap-3 mt-6 flex-wrap">
-              {useSpeechRecognition && !isListening && (
+              {!hasAnswered && (
+                <>
+                  {useSpeechRecognition ? (
+                    <>
+                      {!isListening && (
+                        <button
+                          onClick={startSpeechRecognition}
+                          className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-amber-600 text-amber-700 hover:bg-amber-50 transition"
+                        >
+                          <Mic className="w-4 h-4" /> Speak answer
+                        </button>
+                      )}
+                      {isListening && (
+                        <button
+                          onClick={stopSpeechRecognition}
+                          className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-red-600 text-red-700 hover:bg-red-50 transition"
+                        >
+                          <MicOff className="w-4 h-4" /> Stop
+                        </button>
+                      )}
+                      <button
+                        onClick={handleReveal}
+                        className="px-4 py-2.5 rounded-full text-sm text-stone-500 hover:text-stone-900 transition"
+                      >
+                        skip
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setHasAnswered(true);
+                          if (intervalRef.current) {
+                            clearInterval(intervalRef.current);
+                            intervalRef.current = null;
+                          }
+                        }}
+                        className="btn-amber px-8 py-3 rounded-full text-base font-medium inline-flex items-center gap-2"
+                      >
+                        回答済 <ArrowRight className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={handleSkip}
+                        className="px-4 py-2.5 rounded-full text-sm text-stone-500 hover:text-stone-900 transition"
+                      >
+                        skip
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+              {hasAnswered && (
                 <button
-                  onClick={startSpeechRecognition}
-                  className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-amber-600 text-amber-700 hover:bg-amber-50 transition"
+                  onClick={handleReveal}
+                  className="btn-amber px-8 py-3 rounded-full text-base font-medium inline-flex items-center gap-2"
                 >
-                  <Mic className="w-4 h-4" /> Speak answer
+                  回答済（答えを見る） <ArrowRight className="w-5 h-5" />
                 </button>
               )}
-              {isListening && (
-                <button
-                  onClick={stopSpeechRecognition}
-                  className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-red-600 text-red-700 hover:bg-red-50 transition"
-                >
-                  <MicOff className="w-4 h-4" /> Stop
-                </button>
-              )}
-              <button
-                onClick={handleReveal}
-                className="btn-amber px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2"
-              >
-                {useSpeechRecognition ? 'Skip to answer' : 'Reveal answer'} <ArrowRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleSkip}
-                className="px-4 py-2.5 rounded-full text-sm text-stone-500 hover:text-stone-900 transition"
-              >
-                skip
-              </button>
             </div>
           </>
         )}
