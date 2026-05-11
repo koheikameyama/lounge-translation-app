@@ -954,8 +954,11 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
             {useSpeechRecognition ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
             {useSpeechRecognition ? 'ON' : 'OFF'}
           </button>
-          <div className="font-mono text-stone-500">
-            {idx + 1} <span className="text-stone-400">/ {queue.length}</span>
+          <div className="font-mono text-stone-500 flex items-center gap-2">
+            {current?.number != null && (
+              <span className="text-stone-400">#{current.number}</span>
+            )}
+            <span>{idx + 1} <span className="text-stone-400">/ {queue.length}</span></span>
           </div>
         </div>
       </div>
@@ -1476,6 +1479,11 @@ function SentencesView({ sentences, setSentences }) {
       <div className="space-y-2">
         {filtered.map((s) => (
           <div key={s.id} className="card rounded-xl p-4 flex items-start gap-3 group">
+            {s.number != null && (
+              <div className="text-xs font-mono text-stone-400 mt-1 min-w-12">
+                #{s.number}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="font-jp text-base mb-1">{removeQNotation(s.jp)}</div>
               <div className="font-display text-stone-700 text-sm">{s.en}</div>

@@ -57,6 +57,10 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const sentences = Array.isArray(body) ? body : [body];
 
+    // Get the current max number to start assigning from
+    const maxResult = await db.prepare('SELECT COALESCE(MAX(number), 0) as max_num FROM sentences').first();
+    let nextNumber = (maxResult?.max_num || 0) + 1;
+
     // Process each sentence
     const results = [];
     for (const sentence of sentences) {
@@ -71,18 +75,20 @@ export async function onRequestPost(context) {
 
       const sentenceId = generateId();
       const createdAt = Date.now();
+      const number = nextNumber++;
 
-      // Insert sentence
-      await db.prepare('INSERT INTO sentences (id, video_id, source, jp, en, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
+      // Insert sentence with auto-assigned number
+      await db.prepare('INSERT INTO sentences (id, video_id, source, jp, en, created_at, number) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(
         sentenceId,
         null,  // video_id is always null for PDF sources
         source,
         jp,
         en,
-        createdAt
+        createdAt,
+        number
       ).run();
 
-      results.push({ id: sentenceId, jp, en, source, createdAt });
+      results.push({ id: sentenceId, jp, en, source, createdAt, number });
     }
 
     return new Response(JSON.stringify(results), {
