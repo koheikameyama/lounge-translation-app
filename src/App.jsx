@@ -747,11 +747,25 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     }
   }
 
+  function speakEnglish(text) {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9; // Slightly slower for learning
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
   function handleReveal() {
     if (phase === 'timing') {
       stopSpeechRecognition();
       if (intervalRef.current) clearInterval(intervalRef.current);
       setPhase('revealed');
+      // Automatically speak the correct answer
+      speakEnglish(current.en);
     }
   }
 
