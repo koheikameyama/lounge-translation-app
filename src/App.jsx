@@ -825,6 +825,14 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     const newAttempts = [...attempts, newAttempt];
     setAttempts(newAttempts);
 
+    // Save this attempt to D1 immediately (don't wait until session is "done")
+    const todayKey = todayStr();
+    sessionsAPI.create({ date: todayKey, attempts: [newAttempt] }).then(() => {
+      sessionsAPI.getAll().then(setSessions);
+    }).catch(error => {
+      console.error('Failed to save attempt:', error);
+    });
+
     if (idx + 1 < queue.length) {
       setIdx(idx + 1);
       setPhase('ready');
@@ -878,17 +886,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     };
   }, [phase, idx, useSpeechRecognition]);
 
-  useEffect(() => {
-    if (phase === 'done' && attempts.length > 0 && !sessionSavedRef.current) {
-      sessionSavedRef.current = true;
-      const todayKey = todayStr();
-      sessionsAPI.create({ date: todayKey, attempts }).then(() => {
-        sessionsAPI.getAll().then(setSessions);
-      }).catch(error => {
-        console.error('Failed to save session:', error);
-      });
-    }
-  }, [phase, attempts, setSessions]);
+  // Note: attempts are saved individually in handleRate(), no need for bulk save on done
 
   // Check if no sentences
   if (sentences.length === 0) {
