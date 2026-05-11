@@ -61,6 +61,11 @@ function shuffle(arr) {
   return a;
 }
 
+// Remove Q○○ patterns from Japanese text (Q01, Q001, Q１, Q○○, Q〇〇, etc.)
+function removeQNotation(text) {
+  return text.replace(/^[Qq][0-9０-９○◯〇]+[\s:：]*/, '');
+}
+
 // Weighted shuffle based on OK rate (lower OK rate = higher priority)
 function weightedShuffle(sentences, sessions) {
   if (!sessions || sessions.length === 0) {
@@ -889,7 +894,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
                   color: exceeded5sec ? '#dc2626' : 'inherit'
                 }}
               >
-                {current.jp}
+                {removeQNotation(current.jp)}
               </div>
               <div className="font-mono mt-10 text-sm" style={{ color: exceeded5sec ? '#dc2626' : '#78716c' }}>
                 {fmtMs(now - startTs)}
@@ -993,7 +998,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
               )}
               <div className="text-xs uppercase tracking-widest text-stone-500 mb-3">jp</div>
               <div className="font-jp text-2xl sm:text-3xl mb-6 leading-snug" style={{ fontWeight: 500 }}>
-                {current.jp}
+                {removeQNotation(current.jp)}
               </div>
               <div className="text-xs uppercase tracking-widest text-amber-700 mb-3">correct answer</div>
               <div className="font-display text-2xl sm:text-3xl leading-snug" style={{ fontWeight: 500 }}>
@@ -1344,7 +1349,7 @@ function SentencesView({ sentences, setSentences }) {
         {filtered.map((s) => (
           <div key={s.id} className="card rounded-xl p-4 flex items-start gap-3 group">
             <div className="flex-1 min-w-0">
-              <div className="font-jp text-base mb-1">{s.jp}</div>
+              <div className="font-jp text-base mb-1">{removeQNotation(s.jp)}</div>
               <div className="font-display text-stone-700 text-sm">{s.en}</div>
               {s.source && (
                 <a

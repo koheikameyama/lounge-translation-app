@@ -85,6 +85,8 @@ def is_en(text):
 def clean(text):
     """テキストをクリーニング"""
     text = text.replace("\n", " ").replace("[音楽]", "").replace("[Music]", "")
+    # Remove Q○○ patterns (Q01, Q001, Q１, Q○○, Q〇〇, etc.) from beginning
+    text = re.sub(r"^[Qq][0-9０-９○◯〇]+[\s:：]*", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
