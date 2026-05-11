@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { sessionsAPI } from '../api';
 import { weightedShuffle, removeQNotation, todayStr, fmtMs } from '../utils/helpers';
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
 export function PracticeView({ sentences, sessions, setSessions, setView }) {
   const [queue, setQueue] = useState(() => weightedShuffle(sentences, sessions));
@@ -13,154 +15,24 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
   const [startTs, setStartTs] = useState(null);
   const [now, setNow] = useState(0);
   const [attempts, setAttempts] = useState([]);
-  const [recognizedText, setRecognizedText] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [useSpeechRecognition, setUseSpeechRecognition] = useState(true);
+  const [speechEnabled, setSpeechEnabled] = useState(true);
   const [exceeded5sec, setExceeded5sec] = useState(false);
   const [hasAnswered, setHasAnswered] = useState(false);
   const intervalRef = useRef(null);
   const sessionSavedRef = useRef(false);
-  const recognitionRef = useRef(null);
-  const voicesRef = useRef([]);
 
-  // Preload voices (they load asynchronously in some browsers)
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) return;
-
-    const loadVoices = () => {
-      voicesRef.current = window.speechSynthesis.getVoices();
-    };
-
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-    };
-  }, []);
+  const { speakEnglish, speakJapanese } = useSpeechSynthesis();
+  const recognition = useSpeechRecognition({
+    onFinal: () => setHasAnswered(true),
+    onUnsupported: () => setSpeechEnabled(false),
+  });
+  const { transcript: recognizedText, isListening } = recognition;
 
   const current = queue[idx];
 
-  function startSpeechRecognition() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser.');
-      setUseSpeechRecognition(false);
-      return;
-    }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = null;
-      recognitionRef.current.onerror = null;
-      recognitionRef.current.onend = null;
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore - already stopped
-      }
-      recognitionRef.current = null;
-    }
-
-    setRecognizedText('');
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false; // single-shot recognition (prevents duplicate accumulation)
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
-
-    recognition.onresult = (event) => {
-      const result = event.results[event.results.length - 1];
-      const transcript = result[0].transcript;
-      setRecognizedText(transcript);
-      if (result.isFinal) {
-        setHasAnswered(true);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        return;
-      }
-      setIsListening(false);
-      alert('Speech recognition error: ' + event.error);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }
-
-  function stopSpeechRecognition() {
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = null;
-      recognitionRef.current.onerror = null;
-      recognitionRef.current.onend = null;
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore - already stopped
-      }
-      recognitionRef.current = null;
-      setIsListening(false);
-    }
-  }
-
-  function speakEnglish(text) {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
-      const voices = voicesRef.current.length > 0
-        ? voicesRef.current
-        : window.speechSynthesis.getVoices();
-      const preferredNames = [
-        'Samantha',           // macOS/iOS - natural female
-        'Alex',               // macOS - natural male
-        'Karen',              // macOS AU - natural female
-        'Daniel',             // macOS UK - natural male
-        'Google US English',  // Chrome
-        'Microsoft Aria',     // Edge - natural female
-        'Microsoft Jenny',    // Edge - natural female
-        'Microsoft Guy',      // Edge - natural male
-      ];
-
-      let selectedVoice = null;
-      for (const name of preferredNames) {
-        selectedVoice = voices.find(v => v.name.includes(name) && v.lang.startsWith('en'));
-        if (selectedVoice) break;
-      }
-
-      if (!selectedVoice) {
-        selectedVoice = voices.find(v =>
-          v.lang.startsWith('en-US') && !v.localService
-        ) || voices.find(v => v.lang.startsWith('en-US'));
-      }
-
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-
-      window.speechSynthesis.speak(utterance);
-    }
-  }
-
   function handleReveal() {
     if (phase === 'timing') {
-      stopSpeechRecognition();
+      recognition.stop();
       if (intervalRef.current) clearInterval(intervalRef.current);
       setPhase('revealed');
       speakEnglish(current.en);
@@ -219,31 +91,9 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
       }
     }, 50);
 
-    if (useSpeechRecognition) {
-      setTimeout(() => startSpeechRecognition(), 100);
+    if (speechEnabled) {
+      setTimeout(() => recognition.start(), 100);
     }
-  }
-
-  function speakJapanese(text, onDone) {
-    if (!('speechSynthesis' in window)) {
-      onDone?.();
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja-JP';
-    utterance.rate = 1.0;
-
-    const voices = voicesRef.current.length > 0 ? voicesRef.current : window.speechSynthesis.getVoices();
-    const jpVoice =
-      voices.find(v => v.lang.startsWith('ja') && (v.name.includes('Kyoko') || v.name.includes('Otoya'))) ||
-      voices.find(v => v.lang.startsWith('ja') && !v.localService) ||
-      voices.find(v => v.lang.startsWith('ja'));
-    if (jpVoice) utterance.voice = jpVoice;
-
-    utterance.onend = () => onDone?.();
-    utterance.onerror = () => onDone?.();
-    window.speechSynthesis.speak(utterance);
   }
 
   useEffect(() => {
@@ -252,7 +102,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
       setNow(Date.now());
       setStartTs(null);
       setExceeded5sec(false);
-      setRecognizedText('');
+      recognition.reset();
       setHasAnswered(false);
 
       const jpText = removeQNotation(current.jp);
@@ -266,7 +116,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [phase, idx, useSpeechRecognition]);
+  }, [phase, idx, speechEnabled]);
 
   // Note: attempts are saved individually in handleRate(), no need for bulk save on done
 
@@ -342,12 +192,12 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
         </button>
         <div className="flex items-center gap-4">
           <button
-            onClick={() => setUseSpeechRecognition(!useSpeechRecognition)}
+            onClick={() => setSpeechEnabled(!speechEnabled)}
             className="text-stone-500 hover:text-stone-900 inline-flex items-center gap-1.5 transition"
-            title={useSpeechRecognition ? 'Speech recognition ON' : 'Speech recognition OFF'}
+            title={speechEnabled ? 'Speech recognition ON' : 'Speech recognition OFF'}
           >
-            {useSpeechRecognition ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-            {useSpeechRecognition ? 'ON' : 'OFF'}
+            {speechEnabled ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+            {speechEnabled ? 'ON' : 'OFF'}
           </button>
           <div className="font-mono text-stone-500 flex items-center gap-2">
             {current?.number != null && (
@@ -416,8 +266,8 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
                     </span>
                     <button
                       onClick={() => {
-                        stopSpeechRecognition();
-                        setRecognizedText('');
+                        recognition.stop();
+                        recognition.reset();
                         setHasAnswered(false);
                         if (!intervalRef.current) {
                           let hasExceeded = exceeded5sec;
@@ -430,7 +280,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
                             }
                           }, 50);
                         }
-                        setTimeout(() => startSpeechRecognition(), 100);
+                        setTimeout(() => recognition.start(), 100);
                       }}
                       className="text-xs text-amber-700 hover:text-amber-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-amber-50"
                       title="Redo recording"
@@ -448,11 +298,11 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
             <div className="flex justify-center gap-3 mt-6 flex-wrap">
               {!hasAnswered && (
                 <>
-                  {useSpeechRecognition ? (
+                  {speechEnabled ? (
                     <>
                       {!isListening && (
                         <button
-                          onClick={startSpeechRecognition}
+                          onClick={recognition.start}
                           className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-amber-600 text-amber-700 hover:bg-amber-50 transition"
                         >
                           <Mic className="w-4 h-4" /> Speak answer
@@ -460,7 +310,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
                       )}
                       {isListening && (
                         <button
-                          onClick={stopSpeechRecognition}
+                          onClick={recognition.stop}
                           className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-red-600 text-red-700 hover:bg-red-50 transition"
                         >
                           <MicOff className="w-4 h-4" /> Stop
@@ -578,30 +428,6 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
         )}
       </div>
     </div>
-  );
-}
-
-// eslint-disable-next-line no-unused-vars
-function RateBtn({ icon, label, onClick, variant }) {
-  const dark = variant === 'dark';
-  return (
-    <button
-      onClick={onClick}
-      className="px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 transition"
-      style={{
-        background: dark ? '#1c1917' : 'transparent',
-        color: dark ? '#f5efe2' : '#1c1917',
-        border: '1px solid ' + (dark ? '#1c1917' : 'rgba(28,25,23,0.2)'),
-      }}
-      onMouseEnter={(e) => {
-        if (!dark) e.currentTarget.style.borderColor = '#1c1917';
-      }}
-      onMouseLeave={(e) => {
-        if (!dark) e.currentTarget.style.borderColor = 'rgba(28,25,23,0.2)';
-      }}
-    >
-      {icon} {label}
-    </button>
   );
 }
 
