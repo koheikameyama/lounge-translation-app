@@ -66,16 +66,16 @@ function removeQNotation(text) {
   return text.replace(/^[Qq][0-9０-９○◯〇]+[\s:：]*/, '');
 }
 
-// Weighted shuffle based on OK rate (lower OK rate = higher priority)
+// Prioritized shuffle: no-history → NG → time-exceeded → others (each shuffled within group)
 function weightedShuffle(sentences, sessions) {
   if (!sessions || sessions.length === 0) {
     return shuffle(sentences);
   }
 
-  // Calculate OK rate for each sentence
+  // Aggregate stats per sentence
   const stats = {};
   sentences.forEach(s => {
-    stats[s.id] = { ok: 0, ng: 0, total: 0 };
+    stats[s.id] = { ok: 0, ng: 0, total: 0, times: [] };
   });
 
   sessions.forEach(session => {
@@ -87,69 +87,47 @@ function weightedShuffle(sentences, sessions) {
         } else {
           stats[attempt.sentenceId].ng++;
         }
+        stats[attempt.sentenceId].times.push(attempt.ms);
       }
     });
   });
 
-  // Calculate OK rate and average time for each sentence
-  const timeStats = {};
+  const TARGET_TIME = 5000; // 5 seconds
+
+  // Categorize sentences by priority
+  const noHistory = [];
+  const hasNG = [];
+  const timeExceeded = [];
+  const others = [];
+
   sentences.forEach(s => {
-    timeStats[s.id] = { times: [] };
-  });
-
-  sessions.forEach(session => {
-    session.attempts.forEach(attempt => {
-      if (timeStats[attempt.sentenceId]) {
-        timeStats[attempt.sentenceId].times.push(attempt.ms);
-      }
-    });
-  });
-
-  // Calculate weights (lower OK rate + longer time = higher weight)
-  const weighted = sentences.map(s => {
     const stat = stats[s.id];
-    const timeStat = timeStats[s.id];
-    let weight = 1.0;
-
-    if (stat.total > 0) {
-      const okRate = stat.ok / stat.total;
-      const avgTime = timeStat.times.reduce((a, b) => a + b, 0) / timeStat.times.length;
-      const targetTime = 5000; // 5 seconds
-
-      // Weight formula: (1 - okRate) * 2.0 + (avgTime / targetTime) * 1.5 + 0.3
-      // Examples:
-      // OK 100%, 2sec avg → weight = 0 + 0.6 + 0.3 = 0.9 (low priority)
-      // OK 100%, 10sec avg → weight = 0 + 3.0 + 0.3 = 3.3 (high priority despite OK)
-      // OK 50%, 5sec avg → weight = 1.0 + 1.5 + 0.3 = 2.8
-      // OK 0%, 10sec avg → weight = 2.0 + 3.0 + 0.3 = 5.3 (highest priority)
-      weight = (1 - okRate) * 2.0 + (avgTime / targetTime) * 1.5 + 0.3;
-    }
-
-    return { sentence: s, weight };
-  });
-
-  // Weighted random selection
-  const result = [];
-  const pool = [...weighted];
-
-  while (pool.length > 0) {
-    const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
-    let random = Math.random() * totalWeight;
-
-    let selectedIndex = 0;
-    for (let i = 0; i < pool.length; i++) {
-      random -= pool[i].weight;
-      if (random <= 0) {
-        selectedIndex = i;
-        break;
+    if (stat.total === 0) {
+      // Priority 1: never practiced
+      noHistory.push(s);
+    } else if (stat.ng > 0) {
+      // Priority 2: has at least one NG result
+      hasNG.push(s);
+    } else {
+      // Always OK - check if average time exceeds target
+      const avgTime = stat.times.reduce((a, b) => a + b, 0) / stat.times.length;
+      if (avgTime > TARGET_TIME) {
+        // Priority 3: time-exceeded (even though OK)
+        timeExceeded.push(s);
+      } else {
+        // Priority 4: mastered (OK and fast)
+        others.push(s);
       }
     }
+  });
 
-    result.push(pool[selectedIndex].sentence);
-    pool.splice(selectedIndex, 1);
-  }
-
-  return result;
+  // Shuffle within each priority group, then concatenate in priority order
+  return [
+    ...shuffle(noHistory),
+    ...shuffle(hasNG),
+    ...shuffle(timeExceeded),
+    ...shuffle(others),
+  ];
 }
 
 // Parse pasted import text
