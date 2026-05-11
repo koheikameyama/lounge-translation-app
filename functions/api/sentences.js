@@ -1,12 +1,10 @@
 /**
  * Cloudflare Pages Function: Sentences API
- * GET /api/sentences - Get all sentences (optionally filter by video_id)
+ * GET /api/sentences - Get all sentences
  * POST /api/sentences - Create new sentence(s)
  * PUT /api/sentences - Update sentence
  * DELETE /api/sentences - Delete sentence
  */
-
-import { fetchVideoTitle } from '../_shared.js';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -73,42 +71,18 @@ export async function onRequestPost(context) {
 
       const sentenceId = generateId();
       const createdAt = Date.now();
-      let videoId = null;
-
-      // If source is provided, create or get video
-      if (source) {
-        // Check if video exists
-        const existingVideo = await db.prepare('SELECT id FROM videos WHERE url = ?').bind(source).first();
-
-        if (existingVideo) {
-          videoId = existingVideo.id;
-        } else {
-          // Create new video entry
-          videoId = generateId();
-
-          // Fetch video title from YouTube API
-          const title = await fetchVideoTitle(source, env.YOUTUBE_API_KEY);
-
-          await db.prepare('INSERT INTO videos (id, url, title, created_at) VALUES (?, ?, ?, ?)').bind(
-            videoId,
-            source,
-            title,
-            createdAt
-          ).run();
-        }
-      }
 
       // Insert sentence
       await db.prepare('INSERT INTO sentences (id, video_id, source, jp, en, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
         sentenceId,
-        videoId,
+        null,  // video_id is always null for PDF sources
         source,
         jp,
         en,
         createdAt
       ).run();
 
-      results.push({ id: sentenceId, jp, en, source, videoId, createdAt });
+      results.push({ id: sentenceId, jp, en, source, createdAt });
     }
 
     return new Response(JSON.stringify(results), {
@@ -139,37 +113,16 @@ export async function onRequestPut(context) {
       });
     }
 
-    // Handle video if source changed
-    let videoId = null;
-    if (source) {
-      const existingVideo = await db.prepare('SELECT id FROM videos WHERE url = ?').bind(source).first();
-      if (existingVideo) {
-        videoId = existingVideo.id;
-      } else {
-        videoId = generateId();
-
-        // Fetch video title from YouTube API
-        const title = await fetchVideoTitle(source, env.YOUTUBE_API_KEY);
-
-        await db.prepare('INSERT INTO videos (id, url, title, created_at) VALUES (?, ?, ?, ?)').bind(
-          videoId,
-          source,
-          title,
-          Date.now()
-        ).run();
-      }
-    }
-
     // Update sentence
     await db.prepare('UPDATE sentences SET jp = ?, en = ?, video_id = ?, source = ? WHERE id = ?').bind(
       jp,
       en,
-      videoId,
+      null,  // video_id is always null for PDF sources
       source,
       id
     ).run();
 
-    return new Response(JSON.stringify({ id, jp, en, source, videoId }), {
+    return new Response(JSON.stringify({ id, jp, en, source }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
