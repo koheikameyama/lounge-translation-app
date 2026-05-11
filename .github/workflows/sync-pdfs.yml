@@ -1,0 +1,46 @@
+name: Sync PDF Data
+
+on:
+  schedule:
+    # 毎日JST 9:00 (UTC 0:00) に実行
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # 手動実行も可能
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          pip install -r requirements.txt
+
+      - name: Authenticate with Google Drive
+        run: |
+          cd scripts
+          echo '${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}' > credentials.json
+          echo '${{ secrets.GOOGLE_DRIVE_TOKEN }}' > token.json
+
+      - name: Fetch PDFs and upload to D1
+        env:
+          API_URL: ${{ secrets.CLOUDFLARE_API_URL }}
+          FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        run: |
+          cd scripts
+          python3 fetch_from_drive.py "$FOLDER_ID" --upload-url "$API_URL"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd scripts
+          rm -f credentials.json token.json

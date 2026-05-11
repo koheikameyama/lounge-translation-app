@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
     let query;
     if (videoId) {
       query = db.prepare(`
-        SELECT s.*, v.url as source, v.title as video_title
+        SELECT s.*, v.url as video_url, v.title as video_title
         FROM sentences s
         LEFT JOIN videos v ON s.video_id = v.id
         WHERE s.video_id = ?
@@ -31,7 +31,7 @@ export async function onRequestGet(context) {
       `).bind(videoId);
     } else {
       query = db.prepare(`
-        SELECT s.*, v.url as source, v.title as video_title
+        SELECT s.*, v.url as video_url, v.title as video_title
         FROM sentences s
         LEFT JOIN videos v ON s.video_id = v.id
         ORDER BY s.created_at DESC
@@ -99,9 +99,10 @@ export async function onRequestPost(context) {
       }
 
       // Insert sentence
-      await db.prepare('INSERT INTO sentences (id, video_id, jp, en, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+      await db.prepare('INSERT INTO sentences (id, video_id, source, jp, en, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(
         sentenceId,
         videoId,
+        source,
         jp,
         en,
         createdAt
@@ -160,10 +161,11 @@ export async function onRequestPut(context) {
     }
 
     // Update sentence
-    await db.prepare('UPDATE sentences SET jp = ?, en = ?, video_id = ? WHERE id = ?').bind(
+    await db.prepare('UPDATE sentences SET jp = ?, en = ?, video_id = ?, source = ? WHERE id = ?').bind(
       jp,
       en,
       videoId,
+      source,
       id
     ).run();
 

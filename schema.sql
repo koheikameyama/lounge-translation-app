@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS videos (
 CREATE TABLE IF NOT EXISTS sentences (
   id TEXT PRIMARY KEY,
   video_id TEXT REFERENCES videos(id),
+  source TEXT,  -- PDF filename or video URL
   jp TEXT NOT NULL,
   en TEXT NOT NULL,
   created_at INTEGER NOT NULL

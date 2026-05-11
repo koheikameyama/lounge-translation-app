@@ -31,6 +31,11 @@ Thumbs.db
 .env.*.local
 .dev.vars
 
+# Google Drive API
+scripts/credentials.json
+scripts/token.json
+scripts/.drive_cache.json
+
 # Local data
 sentences.json
 *.local.json
@@ -40,3 +45,5 @@ sentences.json
 
 # Backup files
 *.backup
+
+pdf
