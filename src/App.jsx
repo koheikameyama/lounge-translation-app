@@ -647,52 +647,6 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
   const sessionSavedRef = useRef(false);
   const recognitionRef = useRef(null);
 
-  if (sentences.length === 0) {
-    return (
-      <div className="card rounded-2xl p-10 text-center anim-in">
-        <h2 className="font-display text-2xl mb-3" style={{ fontWeight: 500 }}>
-          No sentences yet
-        </h2>
-        <p className="text-stone-600 text-sm mb-6">
-          Add some Japanese-English pairs first.
-        </p>
-        <button
-          onClick={() => setView('sentences')}
-          className="btn-amber px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" /> Add sentences
-        </button>
-      </div>
-    );
-  }
-
-  useEffect(() => {
-    if (phase === 'timing') {
-      const t = Date.now();
-      setStartTs(t);
-      setNow(t);
-      setExceeded5sec(false);
-      setRecognizedText('');
-      setHasAnswered(false);
-      let hasExceeded = false;
-      intervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - t;
-        setNow(Date.now());
-        // 5秒超過で警告（一度だけ）
-        if (elapsed > 5000 && !hasExceeded) {
-          hasExceeded = true;
-          setExceeded5sec(true);
-        }
-      }, 50);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [phase, idx]);
-
   const current = queue[idx];
 
   function startSpeechRecognition() {
@@ -798,6 +752,42 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     }
   }
 
+  // Timer and auto-start speech recognition
+  useEffect(() => {
+    if (phase === 'timing') {
+      const t = Date.now();
+      setStartTs(t);
+      setNow(t);
+      setExceeded5sec(false);
+      setRecognizedText('');
+      setHasAnswered(false);
+      let hasExceeded = false;
+      intervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - t;
+        setNow(Date.now());
+        // 5秒超過で警告（一度だけ）
+        if (elapsed > 5000 && !hasExceeded) {
+          hasExceeded = true;
+          setExceeded5sec(true);
+        }
+      }, 50);
+
+      // Auto-start speech recognition if enabled
+      if (useSpeechRecognition) {
+        // Small delay to ensure UI is ready
+        setTimeout(() => {
+          startSpeechRecognition();
+        }, 100);
+      }
+    } else if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [phase, idx, useSpeechRecognition]);
+
   useEffect(() => {
     if (phase === 'done' && attempts.length > 0 && !sessionSavedRef.current) {
       sessionSavedRef.current = true;
@@ -809,6 +799,26 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       });
     }
   }, [phase, attempts, setSessions]);
+
+  // Check if no sentences
+  if (sentences.length === 0) {
+    return (
+      <div className="card rounded-2xl p-10 text-center anim-in">
+        <h2 className="font-display text-2xl mb-3" style={{ fontWeight: 500 }}>
+          No sentences yet
+        </h2>
+        <p className="text-stone-600 text-sm mb-6">
+          Add some Japanese-English pairs first.
+        </p>
+        <button
+          onClick={() => setView('sentences')}
+          className="btn-amber px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" /> Add sentences
+        </button>
+      </div>
+    );
+  }
 
   if (phase === 'done') {
     const total = attempts.length;
