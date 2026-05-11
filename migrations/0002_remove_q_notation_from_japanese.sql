@@ -1,0 +1,13 @@
+-- Remove Q○○ notation from Japanese text (Q01, Q001, Q１, Q○○, Q〇〇, etc.)
+--
+-- Note: SQLite/D1 doesn't have native regex replace, so this migration
+-- should be run via the companion JavaScript script:
+-- node migrations/0002_remove_q_notation.js
+--
+-- This SQL file documents the intended change for reference.
+--
+-- Pattern to remove: ^[Qq][0-9０-９○◯〇]+[\s:：]*
+-- Examples:
+--   "Q01 こんにちは" -> "こんにちは"
+--   "Q１０： これは" -> "これは"
+--   "Q○○ あれは" -> "あれは"
