@@ -86,18 +86,38 @@ function weightedShuffle(sentences, sessions) {
     });
   });
 
-  // Calculate weights (lower OK rate = higher weight)
+  // Calculate OK rate and average time for each sentence
+  const timeStats = {};
+  sentences.forEach(s => {
+    timeStats[s.id] = { times: [] };
+  });
+
+  sessions.forEach(session => {
+    session.attempts.forEach(attempt => {
+      if (timeStats[attempt.sentenceId]) {
+        timeStats[attempt.sentenceId].times.push(attempt.ms);
+      }
+    });
+  });
+
+  // Calculate weights (lower OK rate + longer time = higher weight)
   const weighted = sentences.map(s => {
     const stat = stats[s.id];
+    const timeStat = timeStats[s.id];
     let weight = 1.0;
 
     if (stat.total > 0) {
       const okRate = stat.ok / stat.total;
-      // Weight formula: (1 - okRate) * 3 + 0.3
-      // OK rate 0% → weight 3.3
-      // OK rate 50% → weight 1.8
-      // OK rate 100% → weight 0.3
-      weight = (1 - okRate) * 3 + 0.3;
+      const avgTime = timeStat.times.reduce((a, b) => a + b, 0) / timeStat.times.length;
+      const targetTime = 5000; // 5 seconds
+
+      // Weight formula: (1 - okRate) * 2.0 + (avgTime / targetTime) * 1.5 + 0.3
+      // Examples:
+      // OK 100%, 2sec avg → weight = 0 + 0.6 + 0.3 = 0.9 (low priority)
+      // OK 100%, 10sec avg → weight = 0 + 3.0 + 0.3 = 3.3 (high priority despite OK)
+      // OK 50%, 5sec avg → weight = 1.0 + 1.5 + 0.3 = 2.8
+      // OK 0%, 10sec avg → weight = 2.0 + 3.0 + 0.3 = 5.3 (highest priority)
+      weight = (1 - okRate) * 2.0 + (avgTime / targetTime) * 1.5 + 0.3;
     }
 
     return { sentence: s, weight };

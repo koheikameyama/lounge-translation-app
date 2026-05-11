@@ -21,8 +21,10 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.0.0",
     "vite": "^6.0.0",
+    "vite-plugin-pwa": "^1.3.0",
     "wrangler": "^4.90.0"
   }
 }
