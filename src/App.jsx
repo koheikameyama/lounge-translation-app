@@ -239,6 +239,15 @@ export default function App() {
   const [resetConfirm, setResetConfirm] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState(null); // 'checking' | 'migrating' | 'done' | null
 
+  // Refresh data from D1 when switching to practice or sentences view
+  useEffect(() => {
+    if (view === 'practice' || view === 'sentences') {
+      sentencesAPI.getAll().then(setSentences).catch(err => {
+        console.error('Failed to refresh sentences:', err);
+      });
+    }
+  }, [view]);
+
   // Load data from D1
   useEffect(() => {
     async function loadData() {
