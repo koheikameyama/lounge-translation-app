@@ -34,6 +34,7 @@ jobs:
       - name: Fetch PDFs and convert to SQL
         env:
           FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           cd scripts
           python3 fetch_from_drive.py "$FOLDER_ID" > sentences.json

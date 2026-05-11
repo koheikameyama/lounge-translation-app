@@ -37,6 +37,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -195,6 +196,131 @@ def extract_text_from_pdf(pdf_bytes):
 
 # ---------- API upload ----------
 
+def validate_with_openai(pairs, api_key, batch_size=20, model="gpt-4o-mini"):
+    """
+    OpenAI APIで日英ペアを検証・修正する。
+
+    各ペアを以下のいずれかに分類:
+      ok   - そのまま採用
+      fix  - 修正版を採用
+      skip - 重大な問題があるため除外
+
+    api_key が無効/APIエラー時は元のペアをそのまま返す（フォールバック）。
+    """
+    if not pairs or not api_key:
+        return pairs
+
+    cleaned = []
+    total = len(pairs)
+    sys.stderr.write(f"  [validate] OpenAIで{total}ペアを検証中...\n")
+
+    ok_total = 0
+    fix_total = 0
+    skip_total = 0
+
+    for batch_start in range(0, total, batch_size):
+        batch = pairs[batch_start:batch_start + batch_size]
+        indexed = [{"i": i, "jp": p["jp"], "en": p["en"]} for i, p in enumerate(batch)]
+
+        prompt = (
+            "あなたは日英翻訳の品質チェッカーです。以下のJSON配列の各ペア（jp/en）を検証してください。\n\n"
+            "判定基準:\n"
+            "1. ok: 翻訳が意味的に妥当で、両方とも完結した自然な文\n"
+            "2. fix: 修正可能な軽微な問題（誤字、不要な番号や記号、軽い文法ミス）\n"
+            "3. skip: 重大な問題（翻訳が一致しない、文が途中で切れている、意味不明）\n\n"
+            "出力フォーマット: {\"results\": [{\"i\": <index>, \"status\": \"ok\"|\"fix\"|\"skip\", \"jp\": <修正後>, \"en\": <修正後>}, ...]}\n"
+            "status=okの場合は元のテキスト、fixの場合は修正後のテキストを返してください。\n\n"
+            "入力:\n" + json.dumps(indexed, ensure_ascii=False)
+        )
+
+        body = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a strict translation quality checker. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+
+        result_json = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    result_json = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < 2:
+                    wait = 2 ** attempt
+                    sys.stderr.write(f"    rate-limited, waiting {wait}s...\n")
+                    time.sleep(wait)
+                    continue
+                sys.stderr.write(f"    OpenAI HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}\n")
+                cleaned.extend(batch)
+                break
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(1)
+                    continue
+                sys.stderr.write(f"    OpenAI error: {e}\n")
+                cleaned.extend(batch)
+                break
+
+        if not result_json:
+            continue
+
+        try:
+            content = result_json["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            items = parsed.get("results") if isinstance(parsed, dict) else parsed
+            if items is None and isinstance(parsed, dict):
+                for v in parsed.values():
+                    if isinstance(v, list):
+                        items = v
+                        break
+
+            if not isinstance(items, list):
+                sys.stderr.write(f"    unexpected response format, keeping original batch\n")
+                cleaned.extend(batch)
+                continue
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                status = item.get("status", "ok")
+                if status == "skip":
+                    skip_total += 1
+                    continue
+                jp = (item.get("jp") or "").strip()
+                en = (item.get("en") or "").strip()
+                if not jp or not en:
+                    skip_total += 1
+                    continue
+                idx = item.get("i")
+                source = batch[idx]["source"] if isinstance(idx, int) and 0 <= idx < len(batch) else batch[0].get("source", "")
+                cleaned.append({"jp": jp, "en": en, "source": source})
+                if status == "fix":
+                    fix_total += 1
+                else:
+                    ok_total += 1
+        except (KeyError, json.JSONDecodeError, IndexError) as e:
+            sys.stderr.write(f"    failed to parse response: {e}, keeping original batch\n")
+            cleaned.extend(batch)
+
+    sys.stderr.write(f"    検証完了: ok={ok_total} fix={fix_total} skip={skip_total}\n")
+    return cleaned
+
+
 def upload_to_api(sentences, api_url):
     """
     データをCloudflare Workers APIにアップロード
@@ -246,6 +372,8 @@ def main():
     parser.add_argument("folder", nargs="?", help="Google DriveフォルダのIDまたはURL")
     parser.add_argument("--all", action="store_true", help="全ファイルを再取得（キャッシュ無視）")
     parser.add_argument("--upload-url", help="Cloudflare Workers APIのURL（指定するとアップロード）")
+    parser.add_argument("--no-validate", action="store_true", help="OpenAIによる検証をスキップ")
+    parser.add_argument("--openai-model", default="gpt-4o-mini", help="検証に使うOpenAIモデル")
     args = parser.parse_args()
 
     if not args.folder:
@@ -297,18 +425,25 @@ def main():
             pdf_bytes = download_pdf(service, file_id)
             lines = extract_text_from_pdf(pdf_bytes)
             pairs = pair_lines(lines)
-
-            # 出力に追加
-            for p in pairs:
-                out.append({"jp": p["jp"], "en": p["en"], "source": file_name})
-
             sys.stderr.write(f" {len(pairs)}ペア取得\n")
+
+            pair_dicts = [{"jp": p["jp"], "en": p["en"], "source": file_name} for p in pairs]
+
+            # OpenAI で検証・修正
+            if not args.no_validate and pair_dicts:
+                openai_api_key = os.environ.get("OPENAI_API_KEY")
+                if openai_api_key:
+                    pair_dicts = validate_with_openai(pair_dicts, openai_api_key, model=args.openai_model)
+                else:
+                    sys.stderr.write(f"    OPENAI_API_KEYが設定されていないため検証をスキップ\n")
+
+            out.extend(pair_dicts)
 
             # キャッシュ更新
             new_cache[file_id] = {
                 'name': file_name,
                 'modifiedTime': modified_time,
-                'pairs': len(pairs)
+                'pairs': len(pair_dicts)
             }
             processed += 1
 
