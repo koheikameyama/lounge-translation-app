@@ -35,11 +35,17 @@ jobs:
             --project-name=lounge-translation-app \
             --branch=main
 
-      - name: Apply D1 migrations (production)
+      - name: Apply D1 schema and migrations (production)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          # Apply base schema
           npx wrangler d1 execute lounge-translation-db \
             --remote \
             --file=./schema.sql
+
+          # Apply migrations
+          npx wrangler d1 execute lounge-translation-db \
+            --remote \
+            --file=./migrations/0001_add_source_to_sentences.sql
