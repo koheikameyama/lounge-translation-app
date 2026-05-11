@@ -673,27 +673,27 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    let finalTranscript = '';
-
     recognition.onstart = () => {
       setIsListening(true);
     };
 
     recognition.onresult = (event) => {
-      let interimTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      // Rebuild full transcript from event.results each time (no closure accumulation)
+      let finalText = '';
+      let interimText = '';
+      for (let i = 0; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
+          finalText += transcript + ' ';
         } else {
-          interimTranscript += transcript;
+          interimText = transcript;
         }
       }
-      const displayText = (finalTranscript + interimTranscript).trim();
+      const displayText = (finalText + interimText).trim();
       setRecognizedText(displayText);
 
       // Mark as answered when we have a final result
-      if (finalTranscript.trim()) {
+      if (finalText.trim()) {
         setHasAnswered(true);
       }
     };
