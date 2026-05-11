@@ -673,27 +673,32 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     recognition.continuous = true;
     recognition.interimResults = true;
 
+    // Track final results by index to prevent duplicates
+    const finalResults = new Map();
+
     recognition.onstart = () => {
       setIsListening(true);
     };
 
     recognition.onresult = (event) => {
-      // Rebuild full transcript from event.results each time (no closure accumulation)
-      let finalText = '';
       let interimText = '';
-      for (let i = 0; i < event.results.length; i++) {
+      // Only process results from resultIndex onwards (new/updated results)
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += transcript + ' ';
+          finalResults.set(i, transcript.trim());
         } else {
           interimText = transcript;
         }
       }
-      const displayText = (finalText + interimText).trim();
+      // Build final text from accumulated map (sorted by index)
+      const sortedKeys = Array.from(finalResults.keys()).sort((a, b) => a - b);
+      const finalText = sortedKeys.map(k => finalResults.get(k)).join(' ');
+      const displayText = (finalText + ' ' + interimText).trim();
       setRecognizedText(displayText);
 
       // Mark as answered when we have a final result
-      if (finalText.trim()) {
+      if (finalResults.size > 0) {
         setHasAnswered(true);
       }
     };
