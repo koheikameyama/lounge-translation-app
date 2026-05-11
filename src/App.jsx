@@ -670,47 +670,27 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.continuous = true;
+    recognition.continuous = false; // single-shot recognition (prevents duplicate accumulation)
     recognition.interimResults = true;
-
-    // Track final results by index to prevent duplicates
-    const finalResults = new Map();
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
     };
 
     recognition.onresult = (event) => {
-      let interimText = '';
-      // Only process results from resultIndex onwards (new/updated results)
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalResults.set(i, transcript.trim());
-        } else {
-          interimText = transcript;
-        }
-      }
-      // Build final text from accumulated map (sorted by index)
-      const sortedKeys = Array.from(finalResults.keys()).sort((a, b) => a - b);
-      const finalText = sortedKeys.map(k => finalResults.get(k)).join(' ');
-      const displayText = (finalText + ' ' + interimText).trim();
-      setRecognizedText(displayText);
-
-      // Mark as answered when we have a final result
-      if (finalResults.size > 0) {
+      // Single-shot mode: just take the latest result
+      const result = event.results[event.results.length - 1];
+      const transcript = result[0].transcript;
+      setRecognizedText(transcript);
+      if (result.isFinal) {
         setHasAnswered(true);
       }
     };
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      if (event.error === 'no-speech') {
-        // Ignore no-speech errors, will auto-restart
-        return;
-      }
-      if (event.error === 'aborted') {
-        // User manually stopped, no error to show
+      if (event.error === 'no-speech' || event.error === 'aborted') {
         return;
       }
       setIsListening(false);
