@@ -669,11 +669,13 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
       setExceeded5sec(false);
       setRecognizedText('');
       setHasAnswered(false);
+      let hasExceeded = false;
       intervalRef.current = setInterval(() => {
         const elapsed = Date.now() - t;
         setNow(Date.now());
-        // 5秒超過で警告
-        if (elapsed > 5000 && !exceeded5sec) {
+        // 5秒超過で警告（一度だけ）
+        if (elapsed > 5000 && !hasExceeded) {
+          hasExceeded = true;
           setExceeded5sec(true);
         }
       }, 50);
@@ -684,7 +686,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [phase, idx, exceeded5sec]);
+  }, [phase, idx]);
 
   const current = queue[idx];
 
