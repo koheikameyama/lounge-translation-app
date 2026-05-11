@@ -61,6 +61,72 @@ function shuffle(arr) {
   return a;
 }
 
+// Weighted shuffle based on OK rate (lower OK rate = higher priority)
+function weightedShuffle(sentences, sessions) {
+  if (!sessions || sessions.length === 0) {
+    return shuffle(sentences);
+  }
+
+  // Calculate OK rate for each sentence
+  const stats = {};
+  sentences.forEach(s => {
+    stats[s.id] = { ok: 0, ng: 0, total: 0 };
+  });
+
+  sessions.forEach(session => {
+    session.attempts.forEach(attempt => {
+      if (stats[attempt.sentenceId]) {
+        stats[attempt.sentenceId].total++;
+        if (attempt.result === 'ok' || attempt.result === 'got') {
+          stats[attempt.sentenceId].ok++;
+        } else {
+          stats[attempt.sentenceId].ng++;
+        }
+      }
+    });
+  });
+
+  // Calculate weights (lower OK rate = higher weight)
+  const weighted = sentences.map(s => {
+    const stat = stats[s.id];
+    let weight = 1.0;
+
+    if (stat.total > 0) {
+      const okRate = stat.ok / stat.total;
+      // Weight formula: (1 - okRate) * 3 + 0.3
+      // OK rate 0% → weight 3.3
+      // OK rate 50% → weight 1.8
+      // OK rate 100% → weight 0.3
+      weight = (1 - okRate) * 3 + 0.3;
+    }
+
+    return { sentence: s, weight };
+  });
+
+  // Weighted random selection
+  const result = [];
+  const pool = [...weighted];
+
+  while (pool.length > 0) {
+    const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+    let random = Math.random() * totalWeight;
+
+    let selectedIndex = 0;
+    for (let i = 0; i < pool.length; i++) {
+      random -= pool[i].weight;
+      if (random <= 0) {
+        selectedIndex = i;
+        break;
+      }
+    }
+
+    result.push(pool[selectedIndex].sentence);
+    pool.splice(selectedIndex, 1);
+  }
+
+  return result;
+}
+
 // Parse pasted import text
 function parseImport(text) {
   text = text.trim();
@@ -532,7 +598,7 @@ function InfoCard({ title, body }) {
 
 // --------- practice ----------
 function PracticeView({ sentences, sessions, setSessions, setView }) {
-  const [queue, setQueue] = useState(() => shuffle(sentences));
+  const [queue, setQueue] = useState(() => weightedShuffle(sentences, sessions));
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState('ready');
   const [startTs, setStartTs] = useState(null);
@@ -710,7 +776,7 @@ function PracticeView({ sentences, sessions, setSessions, setView }) {
         <div className="flex justify-center gap-3 flex-wrap">
           <button
             onClick={() => {
-              setQueue(shuffle(sentences));
+              setQueue(weightedShuffle(sentences, sessions));
               setIdx(0);
               setAttempts([]);
               sessionSavedRef.current = false;
