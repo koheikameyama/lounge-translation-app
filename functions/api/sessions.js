@@ -8,35 +8,41 @@ function generateId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-// GET: Fetch all sessions with attempts
+// GET: Fetch all sessions with attempts in a single query
 export async function onRequestGet(context) {
   const { env } = context;
   const db = env.DB;
 
   try {
-    // Get all sessions
-    const sessions = await db.prepare(`
-      SELECT * FROM sessions ORDER BY date DESC
+    const rows = await db.prepare(`
+      SELECT
+        s.id   AS session_id,
+        s.date AS session_date,
+        a.sentence_id AS sentenceId,
+        a.ms          AS ms,
+        a.result      AS result
+      FROM sessions s
+      LEFT JOIN attempts a ON a.session_id = s.id
+      ORDER BY s.date DESC, a.created_at ASC
     `).all();
 
-    // For each session, get attempts
-    const sessionsWithAttempts = [];
-    for (const session of sessions.results) {
-      const attempts = await db.prepare(`
-        SELECT sentence_id as sentenceId, ms, result
-        FROM attempts
-        WHERE session_id = ?
-        ORDER BY created_at ASC
-      `).bind(session.id).all();
-
-      sessionsWithAttempts.push({
-        id: session.id,
-        date: session.date,
-        attempts: attempts.results,
-      });
+    const sessionsById = new Map();
+    for (const row of rows.results || []) {
+      let session = sessionsById.get(row.session_id);
+      if (!session) {
+        session = { id: row.session_id, date: row.session_date, attempts: [] };
+        sessionsById.set(row.session_id, session);
+      }
+      if (row.sentenceId != null) {
+        session.attempts.push({
+          sentenceId: row.sentenceId,
+          ms: row.ms,
+          result: row.result,
+        });
+      }
     }
 
-    return new Response(JSON.stringify(sessionsWithAttempts), {
+    return new Response(JSON.stringify([...sessionsById.values()]), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {

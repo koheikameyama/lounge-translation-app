@@ -20,11 +20,14 @@ export function SentencesView({ sentences, setSentences }) {
   async function handleBulkImport() {
     if (importResult.pairs.length === 0) return;
     try {
-      await sentencesAPI.create(importResult.pairs);
+      const result = await sentencesAPI.create(importResult.pairs);
       const newSentences = await sentencesAPI.getAll();
       setSentences(newSentences);
       setImportText('');
       setShowImport(false);
+      if (result?.skipped > 0) {
+        alert(`Added ${result.inserted?.length ?? 0} sentence(s). Skipped ${result.skipped} duplicate(s).`);
+      }
     } catch (error) {
       console.error('Import failed:', error);
       alert('Import failed: ' + error.message);
