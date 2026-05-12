@@ -38,3 +38,4 @@ CREATE INDEX IF NOT EXISTS idx_sentences_video_id ON sentences(video_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_date ON sessions(date);
 CREATE INDEX IF NOT EXISTS idx_attempts_session_id ON attempts(session_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_sentence_id ON attempts(sentence_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sentences_jp_en_unique ON sentences(jp, en);

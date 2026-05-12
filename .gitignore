@@ -45,5 +45,6 @@ sentences.json
 
 # Backup files
 *.backup
+backups/
 
 pdfscripts/*.sql
