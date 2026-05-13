@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Plus, Trash2, Pencil, RotateCcw, Save, ExternalLink,
   Upload, FileJson,
@@ -6,7 +6,7 @@ import {
 import { sentencesAPI } from '../api';
 import { parseImport, removeQNotation } from '../utils/helpers';
 
-export function SentencesView({ sentences, setSentences }) {
+export function SentencesView({ sentences, setSentences, initialEditingId, onConsumeEditId }) {
   const [jp, setJp] = useState('');
   const [en, setEn] = useState('');
   const [source, setSource] = useState('');
@@ -16,6 +16,20 @@ export function SentencesView({ sentences, setSentences }) {
   const [importText, setImportText] = useState('');
 
   const importResult = useMemo(() => parseImport(importText), [importText]);
+
+  useEffect(() => {
+    if (!initialEditingId) return;
+    const target = sentences.find((s) => s.id === initialEditingId);
+    if (target) {
+      setEditingId(target.id);
+      setJp(target.jp);
+      setEn(target.en);
+      setSource(target.source || '');
+      setFilter('');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    onConsumeEditId?.();
+  }, [initialEditingId, sentences]);
 
   async function handleBulkImport() {
     if (importResult.pairs.length === 0) return;

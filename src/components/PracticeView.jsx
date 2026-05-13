@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Play, Plus, Check, X, ChevronLeft, ArrowRight,
-  RotateCcw, ExternalLink, Sparkles, Mic, MicOff, Volume2,
+  RotateCcw, ExternalLink, Sparkles, Mic, MicOff, Volume2, Pencil,
 } from 'lucide-react';
-import { sessionsAPI } from '../api';
+import { sessionsAPI, feedbackAPI } from '../api';
 import { weightedShuffle, removeQNotation, todayStr, fmtMs } from '../utils/helpers';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
-export function PracticeView({ sentences, sessions, setSessions, setView }) {
+export function PracticeView({ sentences, sessions, setSessions, setView, onEditSentence }) {
   const [queue, setQueue] = useState(() => weightedShuffle(sentences, sessions));
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState('ready');
@@ -18,8 +18,10 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
   const [speechEnabled, setSpeechEnabled] = useState(true);
   const [exceeded5sec, setExceeded5sec] = useState(false);
   const [hasAnswered, setHasAnswered] = useState(false);
+  const [feedback, setFeedback] = useState({ status: 'idle', comment: '' });
   const intervalRef = useRef(null);
   const sessionSavedRef = useRef(false);
+  const feedbackReqIdRef = useRef(0);
 
   const { speakEnglish, speakJapanese } = useSpeechSynthesis();
   const recognition = useSpeechRecognition({
@@ -104,6 +106,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
       setExceeded5sec(false);
       recognition.reset();
       setHasAnswered(false);
+      setFeedback({ status: 'idle', comment: '' });
 
       const jpText = removeQNotation(current.jp);
       speakJapanese(jpText, () => {
@@ -117,6 +120,23 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [phase, idx, speechEnabled]);
+
+  useEffect(() => {
+    if (phase !== 'revealed' || !current) return;
+    const reqId = ++feedbackReqIdRef.current;
+    setFeedback({ status: 'loading', comment: '' });
+    feedbackAPI
+      .compare({ jp: current.jp, userAnswer: recognizedText || '', correctAnswer: current.en })
+      .then(({ comment }) => {
+        if (reqId !== feedbackReqIdRef.current) return;
+        setFeedback({ status: 'ready', comment: comment || '' });
+      })
+      .catch((err) => {
+        if (reqId !== feedbackReqIdRef.current) return;
+        console.error('Feedback fetch failed:', err);
+        setFeedback({ status: 'error', comment: '' });
+      });
+  }, [phase, idx]);
 
   // Note: attempts are saved individually in handleRate(), no need for bulk save on done
 
@@ -233,11 +253,16 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
                 {hasAnswered ? 'answered' : 'translating'}
               </div>
-              {current.number != null && (
-                <div className="font-mono text-xs text-stone-400 mb-3">
-                  #{current.number}
-                </div>
-              )}
+              <div className="font-mono text-xs text-stone-400 mb-3 flex items-center gap-3">
+                {current.number != null && <span>#{current.number}</span>}
+                <button
+                  onClick={() => onEditSentence?.(current.id)}
+                  className="inline-flex items-center gap-1 text-stone-400 hover:text-amber-700 transition"
+                  title="Edit this sentence"
+                >
+                  <Pencil className="w-3 h-3" /> edit
+                </button>
+              </div>
               <div
                 className="font-jp text-3xl sm:text-4xl leading-snug max-w-2xl transition-all duration-300"
                 style={{
@@ -373,11 +398,18 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
                   </div>
                 </>
               )}
-              <div className="text-xs uppercase tracking-widest text-stone-500 mb-3 flex items-center gap-2">
+              <div className="text-xs uppercase tracking-widest text-stone-500 mb-3 flex items-center gap-3">
                 <span>jp</span>
                 {current.number != null && (
                   <span className="font-mono text-stone-400">#{current.number}</span>
                 )}
+                <button
+                  onClick={() => onEditSentence?.(current.id)}
+                  className="inline-flex items-center gap-1 text-stone-400 hover:text-amber-700 transition normal-case tracking-normal"
+                  title="Edit this sentence"
+                >
+                  <Pencil className="w-3 h-3" /> edit
+                </button>
               </div>
               <div className="font-jp text-2xl sm:text-3xl mb-6 leading-snug" style={{ fontWeight: 500 }}>
                 {removeQNotation(current.jp)}
@@ -386,6 +418,21 @@ export function PracticeView({ sentences, sessions, setSessions, setView }) {
               <div className="font-display text-2xl sm:text-3xl leading-snug" style={{ fontWeight: 500 }}>
                 {current.en}
               </div>
+              {(feedback.status === 'loading' || feedback.status === 'ready') && (
+                <div className="mt-5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                  <div className="text-xs uppercase tracking-widest text-amber-700 mb-2 flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    comment
+                  </div>
+                  {feedback.status === 'loading' ? (
+                    <div className="text-sm text-stone-500 italic">考え中...</div>
+                  ) : (
+                    <div className="font-jp text-base leading-relaxed text-stone-800" style={{ fontWeight: 500 }}>
+                      {feedback.comment}
+                    </div>
+                  )}
+                </div>
+              )}
               {current.source && (
                 <a
                   href={current.source}

@@ -62,6 +62,16 @@ export const sentencesAPI = {
   },
 };
 
+// Feedback API
+export const feedbackAPI = {
+  async compare({ jp, userAnswer, correctAnswer }) {
+    return fetchAPI('/api/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ jp, userAnswer, correctAnswer }),
+    });
+  },
+};
+
 // Sessions API
 export const sessionsAPI = {
   async getAll() {

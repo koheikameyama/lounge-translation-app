@@ -16,6 +16,7 @@ export default function App() {
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
+  const [editingSentenceId, setEditingSentenceId] = useState(null);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState(null); // 'checking' | 'migrating' | 'done' | null
 
@@ -173,8 +174,8 @@ export default function App() {
 
         <main className="mt-8 sm:mt-12">
           {view === 'home' && <HomeView sessions={sessions} sentences={sentences} setView={setView} />}
-          {view === 'practice' && <PracticeView sentences={sentences} sessions={sessions} setSessions={setSessions} setView={setView} />}
-          {view === 'sentences' && <SentencesView sentences={sentences} setSentences={setSentences} />}
+          {view === 'practice' && <PracticeView sentences={sentences} sessions={sessions} setSessions={setSessions} setView={setView} onEditSentence={(id) => { setEditingSentenceId(id); setView('sentences'); }} />}
+          {view === 'sentences' && <SentencesView sentences={sentences} setSentences={setSentences} initialEditingId={editingSentenceId} onConsumeEditId={() => setEditingSentenceId(null)} />}
           {view === 'videos' && <VideosView videos={videos} sentences={sentences} setView={setView} />}
           {view === 'history' && <HistoryView sessions={sessions} />}
         </main>
