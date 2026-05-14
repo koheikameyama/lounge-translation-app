@@ -68,6 +68,15 @@ CACHE_FILE = '.drive_cache.json'
 JP_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]")
 EN_RE = re.compile(r"[A-Za-z]")
 
+# PDF\u306e\u30d8\u30c3\u30c0\u30fc/\u30d5\u30c3\u30bf\u30fc\u306b\u542b\u307e\u308c\u308b\u5178\u578b\u7684\u306a\u30ce\u30a4\u30ba\u3002\u00a9\u30de\u30fc\u30af\u3084\u900f\u304b\u3057\u6587\u8a00\u304c
+# \u6bce\u30da\u30fc\u30b8\u62bd\u51fa\u3055\u308c\u3066\u65e5\u672c\u8a9e\u6587\u3068\u3057\u3066\u6df7\u5165\u3059\u308b\u306e\u3092\u9632\u3050\u3002
+NOISE_RE = re.compile(r"\u00a9|\u30e1\u30f3\u30d0\u30fc\u9650\u5b9a\u8cc7\u6599")
+
+
+def is_noise(text):
+    """PDF\u306e\u30d8\u30c3\u30c0\u30fc/\u30d5\u30c3\u30bf\u30fc\u7531\u6765\u306e\u30ce\u30a4\u30ba\u884c\u304b\u5224\u5b9a"""
+    return bool(NOISE_RE.search(text))
+
 
 def is_jp(text):
     """日本語が含まれるか判定"""
@@ -94,13 +103,32 @@ def clean(text):
 
 # ---------- pairing ----------
 
+def merge_wrapped_en(lines):
+    """
+    改ページや行折り返しで分断された英文を結合する。
+    直前のEN行が文末記号で終わっておらず、かつ今の行が小文字で始まる場合のみ結合する。
+    """
+    merged = []
+    for line in lines:
+        if (merged
+                and is_en(merged[-1])
+                and is_en(line)
+                and not re.search(r"[.!?]\s*$", merged[-1])
+                and re.match(r"^[a-z]", line)):
+            merged[-1] = merged[-1] + " " + line
+        else:
+            merged.append(line)
+    return merged
+
+
 def pair_lines(lines):
     """
     テキスト行のリストから日英ペアを抽出。
     連続するJP/ENをペア化する。
     """
     cleaned = [clean(line) for line in lines]
-    cleaned = [c for c in cleaned if c and len(c) > 2]
+    cleaned = [c for c in cleaned if c and len(c) > 2 and not is_noise(c)]
+    cleaned = merge_wrapped_en(cleaned)
 
     pairs = []
     i = 0
