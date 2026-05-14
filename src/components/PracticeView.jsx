@@ -63,7 +63,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView, onEdit
 
     if (idx + 1 < queue.length) {
       setIdx(idx + 1);
-      setPhase('ready');
+      setPhase('timing');
     } else {
       setPhase('done');
     }
@@ -72,7 +72,7 @@ export function PracticeView({ sentences, sessions, setSessions, setView, onEdit
   function handleSkip() {
     if (idx + 1 < queue.length) {
       setIdx(idx + 1);
-      setPhase('ready');
+      setPhase('timing');
     } else {
       setPhase('done');
     }
