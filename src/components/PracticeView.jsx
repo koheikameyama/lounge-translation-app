@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Play, Plus, Check, X, ChevronLeft, ArrowRight,
-  RotateCcw, ExternalLink, Sparkles, Mic, MicOff, Volume2, Pencil,
+  RotateCcw, Sparkles, Mic, MicOff, Volume2, Pencil,
 } from 'lucide-react';
 import { sessionsAPI, feedbackAPI } from '../api';
 import { weightedShuffle, removeQNotation, todayStr, fmtMs } from '../utils/helpers';
@@ -432,16 +432,6 @@ export function PracticeView({ sentences, sessions, setSessions, setView, onEdit
                     </div>
                   )}
                 </div>
-              )}
-              {current.source && (
-                <a
-                  href={current.source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-stone-500 hover:text-amber-700 mt-6 inline-flex items-center gap-1 self-start"
-                >
-                  source <ExternalLink className="w-3 h-3" />
-                </a>
               )}
               <div className="font-mono text-stone-500 mt-4 text-sm">
                 took {fmtMs(now - startTs)} {exceeded5sec && <span className="text-red-600">⚠ exceeded 10sec</span>}

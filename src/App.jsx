@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import { sentencesAPI, sessionsAPI, videosAPI, migrateFromLocalStorage } from './api';
+import { sentencesAPI, sessionsAPI, migrateFromLocalStorage } from './api';
 import { STORAGE_KEY, FONT_IMPORT, SEED_SENTENCES } from './constants';
 import { uid } from './utils/helpers';
 import { Header } from './components/Header';
 import { HomeView } from './components/HomeView';
 import { PracticeView } from './components/PracticeView';
 import { SentencesView } from './components/SentencesView';
-import { VideosView } from './components/VideosView';
 import { HistoryView } from './components/HistoryView';
 import { Footer, ResetModal } from './components/Footer';
 
 export default function App() {
   const [sentences, setSentences] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('home');
   const [editingSentenceId, setEditingSentenceId] = useState(null);
@@ -57,15 +55,13 @@ export default function App() {
           }
         }
 
-        const [sentencesData, sessionsData, videosData] = await Promise.all([
+        const [sentencesData, sessionsData] = await Promise.all([
           sentencesAPI.getAll(),
           sessionsAPI.getAll(),
-          videosAPI.getAll(),
         ]);
 
         setSentences(sentencesData || []);
         setSessions(sessionsData || []);
-        setVideos(videosData || []);
         setMigrationStatus('done');
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -74,7 +70,6 @@ export default function App() {
           id: uid(),
           jp: s.jp,
           en: s.en,
-          source: '',
           createdAt: Date.now(),
         }));
         setSentences(seedData);
@@ -85,7 +80,7 @@ export default function App() {
   }, []);
 
   async function handleReset() {
-    if (!window.confirm('Are you sure? This will delete ALL data including videos, sentences, and history.')) {
+    if (!window.confirm('Are you sure? This will delete ALL sentences and history.')) {
       setResetConfirm(false);
       return;
     }
@@ -98,19 +93,16 @@ export default function App() {
       const seedData = SEED_SENTENCES.map((s) => ({
         jp: s.jp,
         en: s.en,
-        source: '',
       }));
       await sentencesAPI.create(seedData);
 
-      const [newSentences, newSessions, newVideos] = await Promise.all([
+      const [newSentences, newSessions] = await Promise.all([
         sentencesAPI.getAll(),
         sessionsAPI.getAll(),
-        videosAPI.getAll(),
       ]);
 
       setSentences(newSentences);
       setSessions(newSessions);
-      setVideos(newVideos);
       setResetConfirm(false);
       setView('home');
     } catch (error) {
@@ -176,7 +168,6 @@ export default function App() {
           {view === 'home' && <HomeView sessions={sessions} sentences={sentences} setView={setView} />}
           {view === 'practice' && <PracticeView sentences={sentences} sessions={sessions} setSessions={setSessions} setView={setView} onEditSentence={(id) => { setEditingSentenceId(id); setView('sentences'); }} />}
           {view === 'sentences' && <SentencesView sentences={sentences} setSentences={setSentences} initialEditingId={editingSentenceId} onConsumeEditId={() => setEditingSentenceId(null)} />}
-          {view === 'videos' && <VideosView videos={videos} sentences={sentences} setView={setView} />}
           {view === 'history' && <HistoryView sessions={sessions} />}
         </main>
 

@@ -22,18 +22,6 @@ async function fetchAPI(endpoint, options = {}) {
   return response.json();
 }
 
-// Videos API
-export const videosAPI = {
-  async getAll() {
-    return fetchAPI('/api/videos');
-  },
-
-  async getTitle(url) {
-    const params = new URLSearchParams({ url });
-    return fetchAPI(`/api/video-title?${params}`);
-  },
-};
-
 // Sentences API
 export const sentencesAPI = {
   async getAll(videoId = null) {

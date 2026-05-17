@@ -102,7 +102,6 @@ export function parseImport(text) {
         .map((o) => ({
           jp: String(o.jp).trim(),
           en: String(o.en).trim(),
-          source: o.source ? String(o.source).trim() : '',
         }));
       return { pairs, format: 'json', error: null };
     } catch (e) {
@@ -122,7 +121,6 @@ export function parseImport(text) {
         return {
           jp: (parts[0] || '').trim(),
           en: (parts[1] || '').trim(),
-          source: (parts[2] || '').trim(),
         };
       })
       .filter((o) => o.jp && o.en);
@@ -139,10 +137,10 @@ export function parseImport(text) {
     const a = lines[i];
     const b = lines[i + 1];
     if (isJp(a) && isEn(b)) {
-      pairs.push({ jp: a, en: b, source: '' });
+      pairs.push({ jp: a, en: b });
       i += 2;
     } else if (isEn(a) && isJp(b)) {
-      pairs.push({ jp: b, en: a, source: '' });
+      pairs.push({ jp: b, en: a });
       i += 2;
     } else {
       i++;

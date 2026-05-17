@@ -3,7 +3,6 @@ export function Header({ view, setView, sentenceCount }) {
     { id: 'home', label: 'Home' },
     { id: 'practice', label: 'Practice' },
     { id: 'sentences', label: 'Sentences' },
-    { id: 'videos', label: 'Videos' },
     { id: 'history', label: 'History' },
   ];
   return (

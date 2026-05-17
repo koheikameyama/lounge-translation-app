@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  Plus, Trash2, Pencil, RotateCcw, Save, ExternalLink,
+  Plus, Trash2, Pencil, RotateCcw, Save,
   Upload, FileJson,
 } from 'lucide-react';
 import { sentencesAPI } from '../api';
@@ -9,7 +9,6 @@ import { parseImport, removeQNotation } from '../utils/helpers';
 export function SentencesView({ sentences, setSentences, initialEditingId, onConsumeEditId }) {
   const [jp, setJp] = useState('');
   const [en, setEn] = useState('');
-  const [source, setSource] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [filter, setFilter] = useState('');
   const [showImport, setShowImport] = useState(false);
@@ -24,7 +23,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
       setEditingId(target.id);
       setJp(target.jp);
       setEn(target.en);
-      setSource(target.source || '');
       setFilter('');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -56,21 +54,18 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
           id: editingId,
           jp: jp.trim(),
           en: en.trim(),
-          source: source.trim(),
         });
         setEditingId(null);
       } else {
         await sentencesAPI.create([{
           jp: jp.trim(),
           en: en.trim(),
-          source: source.trim(),
         }]);
       }
       const newSentences = await sentencesAPI.getAll();
       setSentences(newSentences);
       setJp('');
       setEn('');
-      setSource('');
     } catch (error) {
       console.error('Save failed:', error);
       alert('Save failed: ' + error.message);
@@ -87,7 +82,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
         setEditingId(null);
         setJp('');
         setEn('');
-        setSource('');
       }
     } catch (error) {
       console.error('Delete failed:', error);
@@ -99,7 +93,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
     setEditingId(s.id);
     setJp(s.jp);
     setEn(s.en);
-    setSource(s.source || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -107,7 +100,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
     setEditingId(null);
     setJp('');
     setEn('');
-    setSource('');
   }
 
   async function handleSyncFromD1() {
@@ -162,7 +154,7 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
           <textarea
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
-            placeholder={`例:\n[\n  {"jp": "今行くよ", "en": "I'm coming", "source": "https://..."},\n  ...\n]`}
+            placeholder={`例:\n[\n  {"jp": "今行くよ", "en": "I'm coming"},\n  ...\n]`}
             rows={8}
             className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-stone-50 focus:bg-white focus:border-stone-900 outline-none transition text-sm font-mono"
             style={{ resize: 'vertical' }}
@@ -244,15 +236,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
               className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-stone-50 focus:bg-white focus:border-stone-900 outline-none transition font-display text-base"
             />
           </div>
-          <div>
-            <label className="text-xs text-stone-500 mb-1 block uppercase tracking-wider">Source URL <span className="text-stone-400 normal-case">(optional)</span></label>
-            <input
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-stone-50 focus:bg-white focus:border-stone-900 outline-none transition text-sm font-mono"
-            />
-          </div>
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleAddOrUpdate}
@@ -296,16 +279,6 @@ export function SentencesView({ sentences, setSentences, initialEditingId, onCon
             <div className="flex-1 min-w-0">
               <div className="font-jp text-base mb-1">{removeQNotation(s.jp)}</div>
               <div className="font-display text-stone-700 text-sm">{s.en}</div>
-              {s.source && (
-                <a
-                  href={s.source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-stone-400 hover:text-amber-700 mt-1 inline-flex items-center gap-1 truncate max-w-full"
-                >
-                  <ExternalLink className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{s.source}</span>
-                </a>
-              )}
             </div>
             <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition flex-shrink-0">
               <button
