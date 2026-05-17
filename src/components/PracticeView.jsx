@@ -25,7 +25,6 @@ export function PracticeView({ sentences, sessions, setSessions, setView, onEdit
 
   const { speakEnglish, speakJapanese } = useSpeechSynthesis();
   const recognition = useSpeechRecognition({
-    onFinal: () => setHasAnswered(true),
     onUnsupported: () => setSpeechEnabled(false),
   });
   const { transcript: recognizedText, isListening } = recognition;
@@ -335,7 +334,10 @@ export function PracticeView({ sentences, sessions, setSessions, setView, onEdit
                       )}
                       {isListening && (
                         <button
-                          onClick={recognition.stop}
+                          onClick={() => {
+                            recognition.stop();
+                            setHasAnswered(true);
+                          }}
                           className="px-6 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2 border-2 border-red-600 text-red-700 hover:bg-red-50 transition"
                         >
                           <MicOff className="w-4 h-4" /> Stop
