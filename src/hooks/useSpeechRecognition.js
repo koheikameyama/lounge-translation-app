@@ -1,13 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 
 // Wraps Web Speech API recognition with React state.
-// Continuous mode: keeps listening until stop() is called explicitly,
-// so the user can pause mid-sentence without recognition cutting off.
+// Continuous mode + auto-restart: Chrome ends recognition after a few seconds
+// of silence even in continuous mode, so we restart it transparently until
+// stop() is called explicitly. Finals are accumulated across restarts.
 // onUnsupported fires once if the browser lacks the API.
 export function useSpeechRecognition({ onUnsupported } = {}) {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  // Finals from the CURRENT recognition session, keyed by result index so
+  // Chrome re-emitting the same index overwrites rather than appends.
+  const finalsRef = useRef([]);
+  // Finals carried over from previous sessions (after auto-restart on onend).
+  const carriedFinalsRef = useRef('');
+  // True once the user clicked stop(); prevents the onend auto-restart loop.
+  const userStoppedRef = useRef(false);
   const onUnsupportedRef = useRef(onUnsupported);
 
   useEffect(() => {
@@ -29,25 +37,31 @@ export function useSpeechRecognition({ onUnsupported } = {}) {
   }
 
   function stop() {
+    userStoppedRef.current = true;
     if (recognitionRef.current) {
       detach();
-      setIsListening(false);
     }
+    setIsListening(false);
   }
 
-  function start() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser.');
-      onUnsupportedRef.current?.();
-      return;
-    }
-
-    // Always stop any existing recognition first to avoid duplicate recognition
-    detach();
-
-    // Clear any previous text
+  function reset() {
+    finalsRef.current = [];
+    carriedFinalsRef.current = '';
     setTranscript('');
+  }
 
+  function buildDisplay(interim) {
+    const sessionFinal = finalsRef.current.filter(Boolean).join(' ').trim();
+    const combinedFinal = [carriedFinalsRef.current, sessionFinal]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const interimTrim = (interim || '').trim();
+    const sep = combinedFinal && interimTrim ? ' ' : '';
+    return (combinedFinal + sep + interimTrim).trim();
+  }
+
+  function spawnRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SR();
     recognition.lang = 'en-US';
@@ -60,14 +74,19 @@ export function useSpeechRecognition({ onUnsupported } = {}) {
     };
 
     recognition.onresult = (event) => {
-      let finalText = '';
-      let interimText = '';
-      for (let i = 0; i < event.results.length; i++) {
+      let interim = '';
+      // resultIndex is the index of the first changed result; iterate from
+      // there to avoid re-processing already-stable entries (which causes
+      // word duplication when Chrome re-emits the same index).
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
-        if (r.isFinal) finalText += r[0].transcript;
-        else interimText += r[0].transcript;
+        if (r.isFinal) {
+          finalsRef.current[i] = r[0].transcript.trim();
+        } else {
+          interim += r[0].transcript;
+        }
       }
-      setTranscript((finalText + interimText).trim());
+      setTranscript(buildDisplay(interim));
     };
 
     recognition.onerror = (event) => {
@@ -75,20 +94,58 @@ export function useSpeechRecognition({ onUnsupported } = {}) {
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return;
       }
+      userStoppedRef.current = true;
       setIsListening(false);
       alert('Speech recognition error: ' + event.error);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      if (userStoppedRef.current) {
+        setIsListening(false);
+        return;
+      }
+      // Chrome auto-ended (silence timeout). Carry finals over and restart
+      // so the user can keep talking without losing what was recognized.
+      const sessionFinal = finalsRef.current.filter(Boolean).join(' ').trim();
+      if (sessionFinal) {
+        carriedFinalsRef.current = [carriedFinalsRef.current, sessionFinal]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+      }
+      finalsRef.current = [];
+      recognitionRef.current = null;
+      try {
+        spawnRecognition();
+      } catch (e) {
+        console.error('Failed to restart recognition:', e);
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
     recognition.start();
   }
 
-  function reset() {
+  function start() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Speech recognition is not supported in this browser.');
+      onUnsupportedRef.current?.();
+      return;
+    }
+
+    detach();
+    finalsRef.current = [];
+    carriedFinalsRef.current = '';
+    userStoppedRef.current = false;
     setTranscript('');
+
+    try {
+      spawnRecognition();
+    } catch (e) {
+      console.error('Failed to start recognition:', e);
+      setIsListening(false);
+    }
   }
 
   return { start, stop, reset, transcript, isListening };
